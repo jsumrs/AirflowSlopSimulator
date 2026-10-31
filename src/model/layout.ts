@@ -1,3 +1,4 @@
+import { DirtyTracker } from "./dirty";
 import { type Shape, sameShape, tileCoords, tileCount, tileIndex } from "./grid";
 import {
   DEFAULT_FAN,
@@ -51,15 +52,12 @@ export class Layout {
     window: { ...DEFAULT_WINDOW } as WindowSettings,
   };
 
-  private dirtyFlags: Uint8Array;
-  private dirtyList: number[] = [];
-  private allDirty = true;
+  private trackers: DirtyTracker[] = [];
 
   constructor(shape: Shape) {
     this.shape = shape;
     const n = tileCount(shape);
     this.types = new Uint8Array(n);
-    this.dirtyFlags = new Uint8Array(n);
   }
 
   typeAt(i: number): TileType {
@@ -145,15 +143,13 @@ export class Layout {
   restore(snap: LayoutSnapshot): void {
     this.shape = [...snap.shape];
     this.types = snap.types.slice();
-    this.dirtyFlags = new Uint8Array(this.types.length);
-    this.dirtyList.length = 0;
     this.fans.clear();
     this.heaters.clear();
     this.windows.clear();
     for (const [i, v] of snap.fans) this.fans.set(i, { ...v });
     for (const [i, v] of snap.heaters) this.heaters.set(i, { ...v });
     for (const [i, v] of snap.windows) this.windows.set(i, { ...v });
-    this.allDirty = true;
+    for (const t of this.trackers) t.reset(this.types.length);
   }
 
   /** Resize, keeping tiles that still fit anchored at the origin (top-left). */
@@ -168,8 +164,6 @@ export class Layout {
     const n = tileCount(next);
     this.shape = next;
     this.types = new Uint8Array(n);
-    this.dirtyFlags = new Uint8Array(n);
-    this.dirtyList.length = 0;
     this.fans.clear();
     this.heaters.clear();
     this.windows.clear();
@@ -187,41 +181,19 @@ export class Layout {
       const w = oldWindows.get(i);
       if (w) this.windows.set(ni, w);
     }
-    this.allDirty = true;
+    for (const t of this.trackers) t.reset(n);
   }
 
   // --- change tracking ---
 
-  get dirtyCount(): number {
-    return this.dirtyList.length;
+  /** A new change tracker for one consumer. It starts with everything dirty. */
+  track(): DirtyTracker {
+    const t = new DirtyTracker(this.types.length);
+    this.trackers.push(t);
+    return t;
   }
 
   markDirty(i: number): void {
-    if (this.dirtyFlags[i]) return;
-    this.dirtyFlags[i] = 1;
-    this.dirtyList.push(i);
-  }
-
-  markAllDirty(): void {
-    this.allDirty = true;
-  }
-
-  /** True once if everything needs re-uploading; clears the per-tile list. */
-  consumeAllDirty(): boolean {
-    if (!this.allDirty) return false;
-    this.allDirty = false;
-    this.dirtyFlags.fill(0);
-    this.dirtyList.length = 0;
-    return true;
-  }
-
-  /** Calls `cb` for each changed tile index, then clears the list. */
-  drainDirty(cb: (index: number) => void): void {
-    for (let k = 0; k < this.dirtyList.length; k++) {
-      const i = this.dirtyList[k]!;
-      this.dirtyFlags[i] = 0;
-      cb(i);
-    }
-    this.dirtyList.length = 0;
+    for (let k = 0; k < this.trackers.length; k++) this.trackers[k]!.mark(i);
   }
 }

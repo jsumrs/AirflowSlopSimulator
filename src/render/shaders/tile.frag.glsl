@@ -2,8 +2,15 @@
 precision highp float;
 precision highp int;
 precision highp usampler2D;
+precision highp sampler2D;
 
 uniform usampler2D uTiles;
+uniform sampler2D uTemp;  // R32F temperature, sim resolution
+uniform ivec2 uSim;       // sim grid size
+uniform int uQuality;     // sim cells per tile edge
+uniform float uHeatOn;    // heat map overlay
+uniform float uLo;        // heat scale range, C
+uniform float uHi;
 uniform vec2 uRes;       // drawing buffer size, device px
 uniform vec2 uOrigin;    // grid top-left, device px (y down)
 uniform float uScale;    // device px per tile
@@ -26,12 +33,26 @@ const vec3 GLASS = vec3(0.62, 0.80, 0.92);
 const vec3 INK = vec3(0.12, 0.13, 0.15);
 const vec3 ACCENT = vec3(1.0, 0.48, 0.0);
 
-// Heat ramp: blue -> white (ambient) -> red, fixed 0..100 C scale.
+// Heat ramp: blue (uLo) -> white (ambient) -> red (uHi). White always sits at ambient.
 vec3 heatColor(float c) {
   vec3 blue = vec3(0.2, 0.4, 0.9);
   vec3 red = vec3(0.9, 0.15, 0.1);
-  if (c >= uAmbient) return mix(vec3(1.0), red, clamp((c - uAmbient) / max(100.0 - uAmbient, 1.0), 0.0, 1.0));
-  return mix(vec3(1.0), blue, clamp((uAmbient - c) / max(uAmbient, 1.0), 0.0, 1.0));
+  if (c >= uAmbient) return mix(vec3(1.0), red, clamp((c - uAmbient) / max(uHi - uAmbient, 1e-3), 0.0, 1.0));
+  return mix(vec3(1.0), blue, clamp((uAmbient - c) / max(uAmbient - uLo, 1e-3), 0.0, 1.0));
+}
+
+// Bilinear temperature at tile coords `t` (manual: float textures may not filter).
+float tempAt(vec2 t) {
+  vec2 s = t * float(uQuality) - 0.5;
+  vec2 b = floor(s);
+  vec2 fr = s - b;
+  ivec2 i0 = ivec2(b);
+  ivec2 hi = uSim - 1;
+  float a = texelFetch(uTemp, clamp(i0, ivec2(0), hi), 0).r;
+  float bx = texelFetch(uTemp, clamp(i0 + ivec2(1, 0), ivec2(0), hi), 0).r;
+  float cy = texelFetch(uTemp, clamp(i0 + ivec2(0, 1), ivec2(0), hi), 0).r;
+  float d = texelFetch(uTemp, clamp(i0 + ivec2(1, 1), ivec2(0), hi), 0).r;
+  return mix(mix(a, bx, fr.x), mix(cy, d, fr.x), fr.y);
 }
 
 // Fan level colour, a secondary cue: green 1-2, yellow 3, red 4-5.
@@ -75,13 +96,14 @@ void main() {
   uvec4 d = texelFetch(uTiles, ti, 0);
   uint type = d.r;
 
-  vec3 col = AIR;
+  vec3 air = uHeatOn > 0.5 ? heatColor(tempAt(t)) : AIR;
+  vec3 col = air;
   if (type == 1u) {
     // Steel wall with a faint diagonal hatch.
     float h = step(0.5, fract((t.x + t.y) * 2.0));
     col = WALL * (1.0 - 0.07 * h);
   } else if (type == 2u) {
-    col = FAN_BG;
+    col = uHeatOn > 0.5 ? mix(air, FAN_BG, 0.45) : FAN_BG;
     float level = float(d.b);
     vec2 v = uDirs[d.g & 7u];
     vec2 q = vec2(dot(f, v), dot(f, vec2(-v.y, v.x)));
@@ -121,7 +143,7 @@ void main() {
     float inset = max(abs(f.x), abs(f.y));
     float frame = smoothstep(0.5 - 0.12 - aa, 0.5 - 0.12 + aa, inset);
     if (d.g == 1u) {
-      col = mix(AIR, GLASS, frame);                       // open: frame only
+      col = mix(air, GLASS, frame);                       // open: frame only
     } else {
       col = mix(GLASS, GLASS * 0.7, frame);               // closed: solid pane
       float bar = min(abs(f.x), abs(f.y));

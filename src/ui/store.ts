@@ -67,6 +67,33 @@ export const layoutRev = signal(0);
 export const historyRev = signal(0);
 /** A message for the user (e.g. a failed import), or null. */
 export const notice = signal<string | null>(null);
+/** Sim playback. Sim state is not part of the scene: never saved, never undone. */
+export const playing = signal(true);
+/** Current heat map scale range in C (fixed from settings, or auto from the field). */
+export const heatRange = signal({ lo: DEFAULT_SETTINGS.heatScale.minC, hi: DEFAULT_SETTINGS.heatScale.maxC });
+/** Live readings for the selected tile, refreshed by the frame loop. */
+export const tileStats = signal<{ index: number; tempC: number } | null>(null);
+/** One-shot requests consumed by the frame loop. */
+export const simRequests = { steps: 0, reset: false };
+
+export function togglePlay(): void {
+  playing.value = !playing.value;
+  requestRender();
+}
+
+/** Advance one frame. Only while paused. */
+export function stepSim(): void {
+  if (playing.peek()) return;
+  simRequests.steps++;
+  requestRender();
+}
+
+/** Air and heat back to ambient; the layout stays. */
+export function resetSim(): void {
+  simRequests.reset = true;
+  requestRender();
+}
+
 /** Hovered tile coords, or -1. Plain object: read by the render loop only. */
 export const hover: [number, number] = [-1, -1];
 
@@ -148,7 +175,6 @@ export function paintTile(x: number, y: number, type: TileType): void {
   const i = tileIndex(layout.shape, x, y);
   if (!stroke!.has(i)) stroke!.set(i, layout.tileSnapshot(i));
   if (layout.setTile(i, type)) {
-    if (selected.value === i) selected.value = null;
     layoutRev.value++;
     requestRender();
     autosave.schedule();
@@ -161,10 +187,7 @@ export function selectTile(x: number, y: number): void {
     selected.value = null;
     return;
   }
-  const i = tileIndex(layout.shape, x, y);
-  const t = layout.typeAt(i);
-  selected.value =
-    t === TileType.Fan || t === TileType.Heater || t === TileType.Window ? i : null;
+  selected.value = tileIndex(layout.shape, x, y);
 }
 
 /** Edit one tile's settings. Rapid edits to the same fields merge into one undo step. */
@@ -200,9 +223,18 @@ export function updateSettings(key: string, next: Settings): void {
   changed();
 }
 
-export function setGridLines(on: boolean): void {
+export function setOverlay(name: keyof Settings["overlays"], on: boolean): void {
   const s = scene.settings;
-  updateSettings("gridLines", { ...s, overlays: { ...s.overlays, gridLines: on } });
+  updateSettings(`overlay:${name}`, { ...s, overlays: { ...s.overlays, [name]: on } });
+}
+
+export function setGridLines(on: boolean): void {
+  setOverlay("gridLines", on);
+}
+
+export function setAutoScale(auto: boolean): void {
+  const s = scene.settings;
+  updateSettings("heatScale.auto", { ...s, heatScale: { ...s.heatScale, auto } });
 }
 
 /** Replace the whole scene as one undo step. */
@@ -258,6 +290,7 @@ export function importJson(text: string): boolean {
   try {
     const next = parseSave(text);
     replaceScene(next);
+    resetSim();
     fit();
     notice.value = null;
     return true;

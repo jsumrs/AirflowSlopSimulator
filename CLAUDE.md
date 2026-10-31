@@ -10,7 +10,7 @@ Early implementation. Design docs:
 
 `MILESTONES.md` is the build order. Work on one milestone at a time, check its "Done when" before calling it finished, and tick its box when it's committed.
 
-Milestones 0-2 are in place: skeleton, grid and painting (WebGL2 tile renderer with GLSL in `src/render/shaders/`, pointer and brush tools, side panel), and undo/redo plus versioned JSON save/load and autosave. All layout and settings edits go through the functions in `src/ui/store.ts`, which record `history/` commands; `model/scene.ts` bundles the layout and global settings that are saved and undone. `sim/` is still empty.
+Milestones 0-3 are in place: skeleton, grid and painting (WebGL2 tile renderer with GLSL in `src/render/shaders/`, pointer and brush tools, side panel), undo/redo plus versioned JSON save/load and autosave, and the heat-only solver (`sim/glSolver.ts`, shaders in `src/sim/shaders/`, mirrored by `sim/cpuReference.ts` for tests; tuning constants in `sim/params.ts`). All layout and settings edits go through the functions in `src/ui/store.ts`, which record `history/` commands; `model/scene.ts` bundles the layout and global settings that are saved and undone. Consumers of tile changes each get their own tracker from `layout.track()`. Example layouts live in `src/examples/` as save-format JSON.
 
 ## Commands
 

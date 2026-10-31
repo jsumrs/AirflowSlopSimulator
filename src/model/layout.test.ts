@@ -78,16 +78,31 @@ describe("Layout", () => {
     expect(l.fans.size).toBe(1);
   });
 
-  it("tracks dirty tiles once and drains them", () => {
+  it("tracks dirty tiles once per consumer", () => {
     const l = new Layout([4, 4]);
-    expect(l.consumeAllDirty()).toBe(true);
+    const a = l.track();
+    const b = l.track();
+    expect(a.consumeAll()).toBe(true);
+    expect(b.consumeAll()).toBe(true);
     l.setTile(2, TileType.Wall);
     l.setTile(2, TileType.Fan);
     l.setTile(5, TileType.Wall);
     const seen: number[] = [];
-    l.drainDirty((i) => seen.push(i));
+    a.drain((i) => seen.push(i));
     expect(seen).toEqual([2, 5]);
-    l.drainDirty((i) => seen.push(i));
+    a.drain((i) => seen.push(i));
     expect(seen).toEqual([2, 5]);
+    // b still sees the changes a drained.
+    expect(b.count).toBe(2);
+  });
+
+  it("marks every tracker fully dirty on resize and restore", () => {
+    const l = new Layout([4, 4]);
+    const t = l.track();
+    t.consumeAll();
+    l.resize([5, 5]);
+    expect(t.consumeAll()).toBe(true);
+    l.restore(l.snapshot());
+    expect(t.consumeAll()).toBe(true);
   });
 });

@@ -32,7 +32,7 @@ Every milestone also needs `bunx tsc --noEmit` and `bunx vitest run` to pass.
 
 **Done when:** Ctrl+Z / Ctrl+Shift+Z work for every edit, a reload restores the layout, and an exported file imports back identically.
 
-## [ ] 3. Heat only (no airflow yet)
+## [x] 3. Heat only (no airflow yet)
 - `sim/`: solver interface (`step`, `setTiles`, `readField`) and the WebGL2 implementation with float textures (sections 5, 12).
 - Heater thermostat source, temperature diffusion with per-tile conductivity, open edges at ambient, sanitize/clamp.
 - Upload only changed tiles.

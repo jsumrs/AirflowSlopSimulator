@@ -1,4 +1,5 @@
 import { type Shape, sameShape, tileCoords, tileCount } from "../model/grid";
+import type { DirtyTracker } from "../model/dirty";
 import type { Layout } from "../model/layout";
 import { DIR_VECTORS } from "../model/tiles";
 import { createProgram } from "./gl";
@@ -12,6 +13,16 @@ export interface DrawOptions {
   dpr: number;
   showGrid: boolean;
   ambientC: number;
+  heat: {
+    /** R32F temperature texture at sim resolution. */
+    texture: WebGLTexture;
+    simShape: Shape;
+    quality: number;
+    on: boolean;
+    /** Heat scale range in C. */
+    lo: number;
+    hi: number;
+  };
   /** Selected / hovered tile coords, or -1 for none. */
   selected: readonly [number, number];
   hover: readonly [number, number];
@@ -32,6 +43,7 @@ export class TileRenderer {
   private coords: number[] = [0, 0, 0];
   private dirs = new Float32Array(16);
   private layout: Layout | null = null;
+  private tracker: DirtyTracker | null = null;
   private onDirty = (i: number) => this.uploadOne(i);
 
   constructor(private gl: WebGL2RenderingContext) {
@@ -41,6 +53,7 @@ export class TileRenderer {
     for (const name of [
       "uTiles", "uRes", "uOrigin", "uScale", "uDpr", "uGrid", "uGridLines",
       "uAmbient", "uSelected", "uHover", "uDirs",
+      "uTemp", "uSim", "uQuality", "uHeatOn", "uLo", "uHi",
     ]) {
       this.u[name] = gl.getUniformLocation(this.program, name);
     }
@@ -54,7 +67,11 @@ export class TileRenderer {
   /** Upload changed tiles (or everything after a resize). */
   sync(layout: Layout): void {
     const gl = this.gl;
-    this.layout = layout;
+    if (this.layout !== layout) {
+      this.layout = layout;
+      this.tracker = layout.track();
+    }
+    const tracker = this.tracker!;
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     if (!sameShape(this.shape, layout.shape)) {
       this.shape = layout.shape;
@@ -67,17 +84,17 @@ export class TileRenderer {
         gl.TEXTURE_2D, 0, gl.RGBA8UI, layout.shape[0]!, layout.shape[1]!, 0,
         gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, this.data,
       );
-      layout.markAllDirty();
+      tracker.markAll();
     }
-    if (layout.dirtyCount > FULL_UPLOAD_THRESHOLD) layout.markAllDirty();
-    if (layout.consumeAllDirty()) {
+    if (tracker.count > FULL_UPLOAD_THRESHOLD) tracker.markAll();
+    if (tracker.consumeAll()) {
       for (let i = 0; i < layout.types.length; i++) packTile(layout, i, this.data, i * 4);
       gl.texSubImage2D(
         gl.TEXTURE_2D, 0, 0, 0, layout.shape[0]!, layout.shape[1]!,
         gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, this.data,
       );
     } else {
-      layout.drainDirty(this.onDirty);
+      tracker.drain(this.onDirty);
     }
   }
 
@@ -111,6 +128,14 @@ export class TileRenderer {
     gl.uniform2i(u.uSelected!, o.selected[0], o.selected[1]);
     gl.uniform2i(u.uHover!, o.hover[0], o.hover[1]);
     gl.uniform2fv(u.uDirs!, this.dirs);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, o.heat.texture);
+    gl.uniform1i(u.uTemp!, 1);
+    gl.uniform2i(u.uSim!, o.heat.simShape[0]!, o.heat.simShape[1]!);
+    gl.uniform1i(u.uQuality!, o.heat.quality);
+    gl.uniform1f(u.uHeatOn!, o.heat.on ? 1 : 0);
+    gl.uniform1f(u.uLo!, o.heat.lo);
+    gl.uniform1f(u.uHi!, o.heat.hi);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 }

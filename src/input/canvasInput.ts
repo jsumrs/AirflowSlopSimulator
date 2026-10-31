@@ -29,6 +29,10 @@ export interface InputHost {
   scrollZooms(): boolean;
   fit(): void;
   requestRender(): void;
+  /** Tap of Space (no drag). */
+  togglePlay(): void;
+  /** `.`: advance one frame while paused. */
+  step(): void;
 }
 
 /**
@@ -64,6 +68,8 @@ export function attachCanvasInput(canvas: HTMLCanvasElement, host: InputHost): (
   let panX = 0;
   let panY = 0;
   let space = false;
+  /** Space was used to pan during this press, so its release is not a play/pause tap. */
+  let spacePanned = false;
 
   const local = (e: { clientX: number; clientY: number }) => {
     const r = canvas.getBoundingClientRect();
@@ -85,6 +91,7 @@ export function attachCanvasInput(canvas: HTMLCanvasElement, host: InputHost): (
     const [sx, sy] = local(e);
     button = e.button;
     if (e.button === 1 || (e.button === 0 && space)) {
+      if (space) spacePanned = true;
       mode = "pan";
       panX = sx;
       panY = sy;
@@ -203,13 +210,16 @@ export function attachCanvasInput(canvas: HTMLCanvasElement, host: InputHost): (
       e.preventDefault();
       if (!space) {
         space = true;
+        spacePanned = false;
         updateCursor();
       }
       return;
     }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
-    if (k === "escape" || k === "v") {
+    if (k === "escape" && host.tool() === "pointer") {
+      host.select(-1, -1); // Esc in the pointer tool clears the selection
+    } else if (k === "escape" || k === "v") {
       host.setTool("pointer");
     } else if (k === "b") {
       // Toggle: B again goes back to the pointer.
@@ -219,6 +229,8 @@ export function attachCanvasInput(canvas: HTMLCanvasElement, host: InputHost): (
       // Pressing the active brush's number again drops back to the pointer.
       if (host.tool() === "brush" && host.activeType() === type) host.setTool("pointer");
       else host.setActiveType(type);
+    } else if (k === ".") {
+      host.step();
     } else if (k === "0" || k === "home") {
       e.preventDefault();
       host.fit();
@@ -243,6 +255,7 @@ export function attachCanvasInput(canvas: HTMLCanvasElement, host: InputHost): (
 
   const onKeyUp = (e: KeyboardEvent) => {
     if (e.code === "Space") {
+      if (space && !spacePanned && mode !== "pan") host.togglePlay();
       space = false;
       updateCursor();
     }

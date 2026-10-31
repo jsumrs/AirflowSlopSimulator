@@ -6,7 +6,51 @@ import {
   SWEEP_SPEED_RANGE,
   TileType,
 } from "../model/tiles";
-import { layout, layoutRev, selected, updateFan, updateHeater, updateWindow } from "./store";
+import { tileCoords } from "../model/grid";
+import {
+  layout,
+  layoutRev,
+  selected,
+  settings,
+  tileStats,
+  updateFan,
+  updateHeater,
+  updateWindow,
+} from "./store";
+
+const TYPE_NAMES = ["Air", "Wall", "Fan", "Heater", "Window"];
+
+/** Live readings for the selected tile. Temperature is the mean of the tile's sim cells. */
+function TileStats({ i }: { i: number }) {
+  const [x, y] = tileCoords(layout.shape, i, [0, 0, 0]);
+  const type = layout.typeAt(i);
+  const st = tileStats.value;
+  const temp = st && st.index === i ? st.tempC : null;
+  const ambient = settings.value.ambientC;
+  const heater = type === TileType.Heater ? layout.heaters.get(i) : undefined;
+  const delta = temp === null ? null : temp - ambient;
+  return (
+    <section class="stats">
+      <h2>
+        Tile {x}, {y}
+      </h2>
+      <dl>
+        <dt>Type</dt>
+        <dd>{TYPE_NAMES[type]}</dd>
+        <dt>Temperature</dt>
+        <dd>{temp === null ? "—" : `${temp.toFixed(1)} °C`}</dd>
+        <dt>vs outside</dt>
+        <dd>{delta === null ? "—" : `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} °C`}</dd>
+        {heater && (
+          <>
+            <dt>Status</dt>
+            <dd>{temp === null ? "—" : temp < heater.targetC - 0.5 ? "Heating" : "At target"}</dd>
+          </>
+        )}
+      </dl>
+    </section>
+  );
+}
 
 /** Direction pad layout: compass positions, centre empty. */
 const PAD: (Direction | null)[] = [
@@ -154,8 +198,19 @@ export function SidePanel() {
       </>
     );
   } else {
-    body = <p class="hint">Click a fan, heater, or window to edit its settings.</p>;
+    body =
+      i === null ? (
+        <p class="hint">
+          Click any tile with the pointer (Esc) to see its stats. Fans, heaters, and windows also
+          show their settings.
+        </p>
+      ) : null;
   }
 
-  return <aside class="panel">{body}</aside>;
+  return (
+    <aside class="panel">
+      {i !== null && <TileStats i={i} />}
+      {body}
+    </aside>
+  );
 }

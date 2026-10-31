@@ -1,7 +1,9 @@
 import { MAX_DIM, MIN_DIM } from "../model/grid";
 import { TileType } from "../model/tiles";
 import { useRef } from "preact/hooks";
+import { EXAMPLES } from "../examples";
 import { downloadText } from "./fileIO";
+import { keepFocus } from "./focus";
 import {
   activeType,
   canRedo,
@@ -29,8 +31,6 @@ const PALETTE: { type: TileType; key: string; label: string }[] = [
   { type: TileType.Window, key: "5", label: "Window" },
 ];
 
-/** Keep keyboard focus on the page so hotkeys keep working after a click. */
-const keepFocus = (e: Event) => e.preventDefault();
 
 function DimInput({ axis }: { axis: 0 | 1 }) {
   const shape = gridShape.value;
@@ -85,6 +85,26 @@ export function Toolbar() {
         >
           Import
         </button>
+        <select
+          aria-label="Load an example layout"
+          value=""
+          onChange={(e) => {
+            const el = e.currentTarget;
+            const ex = EXAMPLES.find((x) => x.id === el.value);
+            el.value = "";
+            el.blur();
+            if (ex) importJson(ex.json);
+          }}
+        >
+          <option value="" disabled>
+            Examples…
+          </option>
+          {EXAMPLES.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.name}
+            </option>
+          ))}
+        </select>
         <input
           ref={fileInput}
           type="file"
