@@ -373,3 +373,37 @@ select {
   margin: 0;
   font: 600 13px var(--mono);
 }
+
+.simbar .swirl input[type="range"] {
+  width: 110px;
+}
+
+.simbar output {
+  font: 600 12px var(--mono);
+  min-width: 2.5em;
+}
+
+/* Hover inspector: top-left of the canvas, never blocks the pointer */
+.inspector {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 0.35rem 0.55rem;
+  background: rgba(236, 238, 239, 0.94);
+  border: 2px solid var(--edge);
+  font: 600 12px var(--mono);
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.inspector-head {
+  font-family: var(--font);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.inspector-extra {
+  color: var(--muted);
+}

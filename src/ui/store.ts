@@ -71,8 +71,20 @@ export const notice = signal<string | null>(null);
 export const playing = signal(true);
 /** Current heat map scale range in C (fixed from settings, or auto from the field). */
 export const heatRange = signal({ lo: DEFAULT_SETTINGS.heatScale.minC, hi: DEFAULT_SETTINGS.heatScale.maxC });
-/** Live readings for the selected tile, refreshed by the frame loop. */
-export const tileStats = signal<{ index: number; tempC: number } | null>(null);
+/**
+ * Latest per-tile readings from the GPU, in tile index order: temperature (C) and
+ * velocity (2 per tile, tiles/s, y down). Refreshed by the frame loop while something
+ * is selected or hovered; `readingsRev` bumps on each refresh.
+ */
+export const readings = {
+  temp: new Float32Array(MAX_DIM * MAX_DIM),
+  vel: new Float32Array(MAX_DIM * MAX_DIM * 2),
+  /** Tile count the readings were taken at (guards against reading after a resize). */
+  count: 0,
+};
+export const readingsRev = signal(0);
+/** Hovered tile index, or null. */
+export const hoverTile = signal<number | null>(null);
 /** One-shot requests consumed by the frame loop. */
 export const simRequests = { steps: 0, reset: false };
 
@@ -230,6 +242,14 @@ export function setOverlay(name: keyof Settings["overlays"], on: boolean): void 
 
 export function setGridLines(on: boolean): void {
   setOverlay("gridLines", on);
+}
+
+export function setGravity(gravity: boolean): void {
+  updateSettings("gravity", { ...scene.settings, gravity });
+}
+
+export function setSwirl(swirl: number): void {
+  updateSettings("swirl", { ...scene.settings, swirl });
 }
 
 export function setAutoScale(auto: boolean): void {

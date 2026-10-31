@@ -4,7 +4,9 @@ import {
   playing,
   resetSim,
   setAutoScale,
+  setGravity,
   setOverlay,
+  setSwirl,
   settings,
   stepSim,
   togglePlay,
@@ -88,6 +90,41 @@ export function SimBar() {
           }}
         />
         Auto scale
+      </label>
+      <label>
+        <input
+          type="checkbox"
+          checked={s.overlays.arrows}
+          onChange={(e) => {
+            setOverlay("arrows", e.currentTarget.checked);
+            e.currentTarget.blur();
+          }}
+        />
+        Arrows
+      </label>
+      <label title="Side view: warm air rises, cool air sinks">
+        <input
+          type="checkbox"
+          checked={s.gravity}
+          onChange={(e) => {
+            setGravity(e.currentTarget.checked);
+            e.currentTarget.blur();
+          }}
+        />
+        Gravity
+      </label>
+      <label class="swirl" title="Vorticity confinement: keeps small swirls alive">
+        Swirl
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={s.swirl}
+          onInput={(e) => setSwirl(Number(e.currentTarget.value))}
+          onPointerUp={(e) => e.currentTarget.blur()}
+        />
+        <output>{s.swirl.toFixed(2)}</output>
       </label>
       {s.overlays.heatMap && (
         <Legend lo={r.lo} hi={r.hi} ambient={s.ambientC} auto={s.heatScale.auto} />

@@ -7,28 +7,29 @@ import {
   TileType,
 } from "../model/tiles";
 import { tileCoords } from "../model/grid";
+import { formatAirflow, formatTemp, tileReading } from "./readings";
 import {
   layout,
   layoutRev,
   selected,
+  readingsRev,
   settings,
-  tileStats,
   updateFan,
   updateHeater,
   updateWindow,
 } from "./store";
 
-const TYPE_NAMES = ["Air", "Wall", "Fan", "Heater", "Window"];
+export const TYPE_NAMES = ["Air", "Wall", "Fan", "Heater", "Window"];
 
-/** Live readings for the selected tile. Temperature is the mean of the tile's sim cells. */
+/** Live readings for the selected tile: means over the tile's sim cells. */
 function TileStats({ i }: { i: number }) {
+  readingsRev.value; // refresh with each readback
   const [x, y] = tileCoords(layout.shape, i, [0, 0, 0]);
   const type = layout.typeAt(i);
-  const st = tileStats.value;
-  const temp = st && st.index === i ? st.tempC : null;
+  const r = tileReading(i);
   const ambient = settings.value.ambientC;
   const heater = type === TileType.Heater ? layout.heaters.get(i) : undefined;
-  const delta = temp === null ? null : temp - ambient;
+  const delta = r === null ? null : r.tempC - ambient;
   return (
     <section class="stats">
       <h2>
@@ -38,13 +39,15 @@ function TileStats({ i }: { i: number }) {
         <dt>Type</dt>
         <dd>{TYPE_NAMES[type]}</dd>
         <dt>Temperature</dt>
-        <dd>{temp === null ? "—" : `${temp.toFixed(1)} °C`}</dd>
+        <dd>{r === null ? "—" : formatTemp(r.tempC)}</dd>
         <dt>vs outside</dt>
         <dd>{delta === null ? "—" : `${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(1)} °C`}</dd>
+        <dt>Airflow</dt>
+        <dd>{r === null ? "—" : formatAirflow(r)}</dd>
         {heater && (
           <>
             <dt>Status</dt>
-            <dd>{temp === null ? "—" : temp < heater.targetC - 0.5 ? "Heating" : "At target"}</dd>
+            <dd>{r === null ? "—" : r.tempC < heater.targetC - 0.5 ? "Heating" : "At target"}</dd>
           </>
         )}
       </dl>

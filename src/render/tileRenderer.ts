@@ -23,10 +23,18 @@ export interface DrawOptions {
     lo: number;
     hi: number;
   };
+  flow: {
+    /** RGBA32F per-tile means: g/b = velocity in tiles/s. */
+    texture: WebGLTexture;
+    arrows: boolean;
+  };
   /** Selected / hovered tile coords, or -1 for none. */
   selected: readonly [number, number];
   hover: readonly [number, number];
 }
+
+/** Air speed (tiles/s) drawn as a full-length arrow. */
+const ARROW_FULL_SPEED = 6;
 
 /** Above this many changed tiles, re-upload the whole texture instead. */
 const FULL_UPLOAD_THRESHOLD = 512;
@@ -54,6 +62,7 @@ export class TileRenderer {
       "uTiles", "uRes", "uOrigin", "uScale", "uDpr", "uGrid", "uGridLines",
       "uAmbient", "uSelected", "uHover", "uDirs",
       "uTemp", "uSim", "uQuality", "uHeatOn", "uLo", "uHi",
+      "uTileAvg", "uArrows", "uArrowFull",
     ]) {
       this.u[name] = gl.getUniformLocation(this.program, name);
     }
@@ -136,6 +145,11 @@ export class TileRenderer {
     gl.uniform1f(u.uHeatOn!, o.heat.on ? 1 : 0);
     gl.uniform1f(u.uLo!, o.heat.lo);
     gl.uniform1f(u.uHi!, o.heat.hi);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, o.flow.texture);
+    gl.uniform1i(u.uTileAvg!, 2);
+    gl.uniform1f(u.uArrows!, o.flow.arrows ? 1 : 0);
+    gl.uniform1f(u.uArrowFull!, ARROW_FULL_SPEED);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 }

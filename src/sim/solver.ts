@@ -11,9 +11,14 @@ export function simShapeFor(tileShape: Shape, quality: number): Shape {
 
 export interface SimParams {
   ambientC: number;
+  /** Side view with buoyancy (warm air rises) when true. */
+  gravity: boolean;
+  /** Vorticity confinement strength, 0-1. */
+  swirl: number;
 }
 
-export type FieldName = "temperature";
+/** "temperature": 1 value per tile (C). "velocity": one value per axis per tile (tiles/s, y down). */
+export type FieldName = "temperature" | "velocity";
 
 /**
  * Simulation core. Implementations work on a generic grid shape so a 3D solver
@@ -33,7 +38,7 @@ export interface Solver {
   step(dt: number): void;
   /** Air and heat back to ambient. */
   reset(): void;
-  /** Per-tile averages of a field, written into `out` (one value per tile). */
+  /** Per-tile averages of a field, written into `out` in tile index order. */
   readField(field: FieldName, out: Float32Array): void;
   dispose(): void;
 }

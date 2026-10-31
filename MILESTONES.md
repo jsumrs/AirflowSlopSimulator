@@ -43,7 +43,7 @@ Every milestone also needs `bunx tsc --noEmit` and `bunx vitest run` to pass.
 
 **Done when:** heat spreads out from a heater, stops at its target temperature, leaks faster through a closed window than through a wall, and fades at open edges.
 
-## [ ] 4. Airflow
+## [x] 4. Airflow
 - Fan momentum source, semi-Lagrangian advection of velocity and temperature, Jacobi pressure projection, solid boundaries for walls and closed windows (section 5).
 - Vorticity confinement with the Swirl slider. Gravity toggle with buoyancy.
 - Arrow overlay, one per tile (section 6).

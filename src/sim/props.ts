@@ -1,25 +1,39 @@
 import type { Layout } from "../model/layout";
-import { TileType } from "../model/tiles";
-import { K_AIR, K_WALL, K_WINDOW } from "./params";
+import { DIR_VECTORS, TileType } from "../model/tiles";
+import { FAN_SPEED_PER_LEVEL, K_AIR, K_WALL, K_WINDOW } from "./params";
 
-/** Floats per tile in the property texture. */
-export const PROPS_STRIDE = 4;
+/** Floats per tile: two RGBA32F texels (props A and props B). */
+export const PROPS_STRIDE = 8;
 
 /**
- * Per-tile solver properties, 4 floats (one RGBA32F texel), shared by the GPU
- * solver and the CPU reference:
- *   [0] conductivity, [1] solid (blocks air, 0/1), [2] heater target C, [3] heater output level (0 = no heater)
+ * Per-tile solver properties, shared by the GPU solver and the CPU reference.
+ *   A: [0] conductivity, [1] solid (blocks air, 0/1), [2] heater target C, [3] heater output level (0 = none)
+ *   B: [4] fan direction x, [5] fan direction y (unit vector, y down), [6] fan target speed tiles/s (0 = none), [7] unused
  */
 export function tileProps(layout: Layout, i: number, out: Float32Array, o: number): void {
   let k = K_AIR;
   let solid = 0;
   let target = 0;
   let rate = 0;
+  let fx = 0;
+  let fy = 0;
+  let speed = 0;
   switch (layout.typeAt(i)) {
     case TileType.Wall:
       k = K_WALL;
       solid = 1;
       break;
+    case TileType.Fan: {
+      const f = layout.fans.get(i);
+      if (f && f.on) {
+        const [dx, dy] = DIR_VECTORS[f.dir]!;
+        const len = Math.hypot(dx, dy);
+        fx = dx / len;
+        fy = dy / len;
+        speed = f.level * FAN_SPEED_PER_LEVEL;
+      }
+      break;
+    }
     case TileType.Heater: {
       const h = layout.heaters.get(i);
       if (h) {
@@ -41,6 +55,10 @@ export function tileProps(layout: Layout, i: number, out: Float32Array, o: numbe
   out[o + 1] = solid;
   out[o + 2] = target;
   out[o + 3] = rate;
+  out[o + 4] = fx;
+  out[o + 5] = fy;
+  out[o + 6] = speed;
+  out[o + 7] = 0;
 }
 
 export function buildProps(layout: Layout): Float32Array {

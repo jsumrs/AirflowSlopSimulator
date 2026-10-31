@@ -11,6 +11,9 @@ uniform int uQuality;     // sim cells per tile edge
 uniform float uHeatOn;    // heat map overlay
 uniform float uLo;        // heat scale range, C
 uniform float uHi;
+uniform sampler2D uTileAvg; // RGBA32F per tile: temperature, velocity x, velocity y
+uniform float uArrows;      // airflow arrow overlay
+uniform float uArrowFull;   // air speed (tiles/s) drawn as a full-length arrow
 uniform vec2 uRes;       // drawing buffer size, device px
 uniform vec2 uOrigin;    // grid top-left, device px (y down)
 uniform float uScale;    // device px per tile
@@ -74,6 +77,18 @@ float sdArrow(vec2 q, float level) {
   float shaft = sdBox(q, vec2((0.1 + tail) * 0.5, 0.0), vec2((0.1 - tail) * 0.5, 0.05 + 0.012 * level));
   float e1 = 0.08 - q.x;
   float e2 = (0.3 * abs(q.y) + 0.26 * q.x - 0.104) / 0.397;
+  return min(shaft, max(e1, e2));
+}
+
+// Airflow arrow along +x, centred, total length `len` (tiles). Sharp shaft and head.
+float sdFlowArrow(vec2 q, float len) {
+  float head = min(0.18, len * 0.5);
+  float hw = head * 0.65;
+  float tip = len * 0.5;
+  float base = tip - head;
+  float shaft = sdBox(q, vec2((base - len * 0.5) * 0.5, 0.0), vec2((base + len * 0.5) * 0.5, 0.028));
+  float e1 = base - q.x;
+  float e2 = (abs(q.y) * head + (q.x - tip) * hw) / length(vec2(hw, head));
   return min(shaft, max(e1, e2));
 }
 
@@ -148,6 +163,21 @@ void main() {
       col = mix(GLASS, GLASS * 0.7, frame);               // closed: solid pane
       float bar = min(abs(f.x), abs(f.y));
       col = mix(col, GLASS * 0.7, 1.0 - smoothstep(0.02 - aa, 0.02 + aa, bar));
+    }
+  }
+
+  // Airflow arrows: one per tile, over air, heaters and open windows.
+  bool passable = type == 0u || type == 3u || (type == 4u && d.g == 1u);
+  if (uArrows > 0.5 && passable && uScale >= 6.0 * uDpr) {
+    vec2 vel = texelFetch(uTileAvg, ti, 0).gb;
+    float speed = length(vel);
+    float k = clamp(speed / uArrowFull, 0.0, 1.0);
+    float alpha = smoothstep(0.02, 0.15, k);
+    if (alpha > 0.0) {
+      vec2 dir = vel / speed;
+      vec2 q = vec2(dot(f, dir), dot(f, vec2(-dir.y, dir.x)));
+      float dist = sdFlowArrow(q, 0.25 + 0.6 * k);
+      col = mix(col, INK, 0.85 * alpha * (1.0 - smoothstep(-aa, aa, dist)));
     }
   }
 

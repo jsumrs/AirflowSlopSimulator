@@ -1,13 +1,14 @@
 import { effect } from "@preact/signals";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { attachCanvasInput } from "../input/canvasInput";
-import { MAX_DIM, sameShape, tileCoords } from "../model/grid";
+import { sameShape, tileCoords, tileIndex } from "../model/grid";
 import { TileType } from "../model/tiles";
 import { createGlContext, resizeToDisplay } from "../render/gl";
 import { type DrawOptions, TileRenderer } from "../render/tileRenderer";
 import { clampView, fitView } from "../render/view";
 import { GlSolver } from "../sim/glSolver";
 import { MAX_STEPS_PER_FRAME, SIM_DT } from "../sim/params";
+import { Inspector } from "./Inspector";
 import { SimBar } from "./SimBar";
 import { SidePanel } from "./SidePanel";
 import { Toolbar } from "./Toolbar";
@@ -31,7 +32,9 @@ import {
   settings,
   simRequests,
   stepSim,
-  tileStats,
+  readings,
+  readingsRev,
+  hoverTile,
   togglePlay,
   tool,
   undo,
@@ -55,10 +58,10 @@ export function App() {
     const { gl } = result;
     const renderer = new TileRenderer(gl);
     const solver = new GlSolver(gl, layout.shape, settings.peek().simQuality);
-    solver.setParams({ ambientC: settings.peek().ambientC });
+    const initial = settings.peek();
+    solver.setParams({ ambientC: initial.ambientC, gravity: initial.gravity, swirl: initial.swirl });
     solver.reset();
     const solverTiles = layout.track();
-    const tileTemps = new Float32Array(MAX_DIM * MAX_DIM);
     const range = { lo: 0, hi: 100 };
 
     const sel: [number, number] = [-1, -1];
@@ -76,6 +79,7 @@ export function App() {
         lo: 0,
         hi: 100,
       },
+      flow: { texture: solver.tileAverages, arrows: true },
       selected: sel,
       hover,
     };
@@ -111,6 +115,7 @@ export function App() {
         if (hover[0] === x && hover[1] === y) return;
         hover[0] = x;
         hover[1] = y;
+        hoverTile.value = x < 0 ? null : tileIndex(layout.shape, x, y);
         requestRender();
       },
       scrollZooms: () => scrollMode.peek() === "zoom",
@@ -137,7 +142,8 @@ export function App() {
     /** The temperature field changed since the last auto-scale readback. */
     let fieldChanged = true;
     let wasAuto = false;
-    let lastStatsIndex: number | null = null;
+    let lastSel: number | null = null;
+    let lastHover: number | null = null;
 
     const updateRange = (lo: number, hi: number): boolean => {
       if (Math.abs(lo - range.lo) < 0.05 && Math.abs(hi - range.hi) < 0.05) return false;
@@ -159,7 +165,7 @@ export function App() {
         solver.resize(layout.shape, cfg.simQuality);
         fieldChanged = true;
       }
-      solver.setParams({ ambientC: cfg.ambientC });
+      solver.setParams({ ambientC: cfg.ambientC, gravity: cfg.gravity, swirl: cfg.swirl });
       solver.setTiles(layout, solverTiles);
       if (simRequests.reset) {
         simRequests.reset = false;
@@ -183,36 +189,35 @@ export function App() {
       }
       if (steps > 0) fieldChanged = true;
 
-      // --- readback: auto heat scale and selected-tile stats ---
-      // Reading the field back stalls the GPU a little, so do it at most every 10 frames,
-      // and only when the field or the selection changed.
+      // --- readback: auto heat scale, selected tile, hovered tile ---
+      // A readback stalls the GPU only when the field changed since the last one, so
+      // throttle those to every 6 frames; a new target reads (cached) values at once.
       let rangeChanged = false;
       const auto = cfg.heatScale.auto;
-      const statsIndex = selected.peek();
-      const selectionMoved = statsIndex !== lastStatsIndex;
-      const wantRead =
-        (auto && (fieldChanged || !wasAuto)) || (statsIndex !== null && (fieldChanged || selectionMoved));
-      if (wantRead && (frameNo - lastRead >= 10 || selectionMoved)) {
-        solver.readField("temperature", tileTemps);
+      const selIdx = selected.peek();
+      const hovIdx = hoverTile.peek();
+      const targetsMoved = selIdx !== lastSel || hovIdx !== lastHover;
+      const wantRead = auto || selIdx !== null || hovIdx !== null;
+      if (wantRead && ((fieldChanged && frameNo - lastRead >= 6) || targetsMoved || (auto && !wasAuto))) {
+        solver.readField("temperature", readings.temp);
+        solver.readField("velocity", readings.vel);
+        readings.count = layout.types.length;
+        readingsRev.value++;
         lastRead = frameNo;
         fieldChanged = false;
         if (auto) {
-          const n = layout.types.length;
           let lo = Infinity;
           let hi = -Infinity;
-          for (let i = 0; i < n; i++) {
-            const t = tileTemps[i]!;
+          for (let i = 0; i < readings.count; i++) {
+            const t = readings.temp[i]!;
             if (t < lo) lo = t;
             if (t > hi) hi = t;
           }
           rangeChanged = updateRange(Math.min(lo, cfg.ambientC - 2), Math.max(hi, cfg.ambientC + 2));
         }
-        if (statsIndex !== null && statsIndex < layout.types.length) {
-          tileStats.value = { index: statsIndex, tempC: tileTemps[statsIndex]! };
-        }
       }
-      if (statsIndex === null && tileStats.peek() !== null) tileStats.value = null;
-      lastStatsIndex = statsIndex;
+      lastSel = selIdx;
+      lastHover = hovIdx;
       if (!auto) rangeChanged = updateRange(cfg.heatScale.minC, cfg.heatScale.maxC);
       wasAuto = auto;
 
@@ -227,6 +232,8 @@ export function App() {
       opts.heat.on = cfg.overlays.heatMap;
       opts.heat.lo = range.lo;
       opts.heat.hi = range.hi;
+      opts.flow.texture = solver.tileAverages;
+      opts.flow.arrows = cfg.overlays.arrows;
       const s = selected.peek();
       if (s === null) {
         sel[0] = sel[1] = -1;
@@ -276,6 +283,7 @@ export function App() {
         <div class="stage">
           <div class="viewport">
             <canvas ref={canvasRef} />
+            <Inspector />
           </div>
           <SimBar />
         </div>

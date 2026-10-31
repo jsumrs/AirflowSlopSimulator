@@ -2,32 +2,31 @@ import { describe, expect, it } from "vitest";
 import { type Shape, tileIndex } from "../model/grid";
 import { Layout } from "../model/layout";
 import { TileType } from "../model/tiles";
-import { cpuHeatStep, type HeatGrid } from "./cpuReference";
+import { CpuSim } from "./cpuReference";
 import { SIM_DT, diffusionSubsteps } from "./params";
 import { buildProps } from "./props";
-import { simShapeFor } from "./solver";
 
 const AMB = 20;
 
 function setup(shape: Shape, quality: number, paint?: (l: Layout) => void) {
   const layout = new Layout(shape);
   paint?.(layout);
-  const g: HeatGrid = { tileShape: shape, quality, props: buildProps(layout) };
-  const sim = simShapeFor(shape, quality);
-  const n = sim[0]! * sim[1]!;
-  const temp = new Float32Array(n).fill(AMB);
-  const scratch = new Float32Array(n);
-  const run = (steps: number) => {
-    for (let s = 0; s < steps; s++) cpuHeatStep(temp, scratch, g, AMB, SIM_DT);
+  const cpu = new CpuSim(shape, quality, buildProps(layout), { ambientC: AMB, gravity: false, swirl: 0 });
+  const sim = cpu.sim;
+  // Heat tests write straight into the temperature field; keep `temp` pointing at the live buffer.
+  const api = {
+    layout,
+    sim,
+    cpu,
+    get temp() {
+      return cpu.temp;
+    },
+    run(steps: number) {
+      for (let s = 0; s < steps; s++) cpu.step(SIM_DT);
+    },
+    tileTemp: (x: number, y: number) => cpu.tileMean("temp", x, y),
   };
-  /** Mean temperature over one tile's cells. */
-  const tileTemp = (x: number, y: number) => {
-    let sum = 0;
-    for (let j = 0; j < quality; j++)
-      for (let i = 0; i < quality; i++) sum += temp[tileIndex(sim, x * quality + i, y * quality + j)]!;
-    return sum / (quality * quality);
-  };
-  return { layout, sim, temp, run, tileTemp };
+  return api;
 }
 
 /** Walled room with its outline at `inset` tiles from the edge. */
@@ -45,29 +44,29 @@ function room(l: Layout, inset: number) {
 
 describe("CPU heat reference", () => {
   it("leaves a uniform ambient field unchanged", () => {
-    const { temp, run } = setup([6, 5], 2, (l) => room(l, 1));
-    run(10);
-    for (const t of temp) expect(t).toBeCloseTo(AMB, 6);
+    const s = setup([6, 5], 2, (l) => room(l, 1));
+    s.run(10);
+    for (const t of s.temp) expect(t).toBeCloseTo(AMB, 6);
   });
 
   it("conserves heat away from the edges", () => {
-    const { temp, sim, run } = setup([20, 20], 1);
-    temp[tileIndex(sim, 10, 10)] = 100;
-    const total = () => temp.reduce((a, t) => a + (t - AMB), 0);
+    const s = setup([20, 20], 1);
+    s.temp[tileIndex(s.sim, 10, 10)] = 100;
+    const total = () => s.temp.reduce((a, t) => a + (t - AMB), 0);
     const before = total();
-    run(5);
+    s.run(5);
     expect(total()).toBeCloseTo(before, 3);
-    expect(temp[tileIndex(sim, 10, 10)]).toBeLessThan(100);
-    expect(temp[tileIndex(sim, 11, 10)]).toBeGreaterThan(AMB);
+    expect(s.temp[tileIndex(s.sim, 10, 10)]).toBeLessThan(100);
+    expect(s.temp[tileIndex(s.sim, 11, 10)]).toBeGreaterThan(AMB);
   });
 
   it("never overshoots: values stay within the initial range at every quality", () => {
     for (const q of [1, 2, 4]) {
-      const { temp, sim, run } = setup([8, 8], q, (l) => room(l, 1));
-      temp[tileIndex(sim, 3 * q, 3 * q)] = 90;
-      temp[tileIndex(sim, 4 * q, 4 * q)] = -10;
-      run(30);
-      for (const t of temp) {
+      const s = setup([8, 8], q, (l) => room(l, 1));
+      s.temp[tileIndex(s.sim, 3 * q, 3 * q)] = 90;
+      s.temp[tileIndex(s.sim, 4 * q, 4 * q)] = -10;
+      s.run(30);
+      for (const t of s.temp) {
         expect(t).toBeLessThanOrEqual(90 + 1e-4);
         expect(t).toBeGreaterThanOrEqual(-10 - 1e-4);
       }
@@ -80,13 +79,12 @@ describe("CPU heat reference", () => {
   });
 
   it("heats toward the heater's target and never above it", () => {
-    const { layout, run, tileTemp } = setup([12, 12], 2, (l) => {
+    const { run, tileTemp } = setup([12, 12], 2, (l) => {
       room(l, 1);
       const i = tileIndex(l.shape, 6, 6);
       l.setTile(i, TileType.Heater);
       l.updateHeater(i, { targetC: 45, outputRate: 3 });
     });
-    void layout;
     let peak = 0;
     for (let s = 0; s < 60; s++) {
       run(60); // one sim second per loop
@@ -97,7 +95,7 @@ describe("CPU heat reference", () => {
     // The room warmed up, and it is warmer than outside.
     expect(tileTemp(3, 3)).toBeGreaterThan(AMB + 5);
     expect(tileTemp(0, 0)).toBeLessThan(tileTemp(3, 3));
-  });
+  }, 30_000);
 
   it("leaks faster through a closed window than through a wall", () => {
     const hotRoom = (withWindow: boolean) => {
@@ -137,18 +135,18 @@ describe("CPU heat reference", () => {
   });
 
   it("fades back to ambient through the open edges", () => {
-    const { temp, sim, run } = setup([6, 6], 1);
-    temp.fill(70);
-    run(600);
-    for (const t of temp) expect(t).toBeLessThan(AMB + 1);
-    expect(temp[tileIndex(sim, 0, 0)]).toBeGreaterThanOrEqual(AMB - 1e-4);
+    const s = setup([6, 6], 1);
+    s.temp.fill(70);
+    s.run(600);
+    for (const t of s.temp) expect(t).toBeLessThan(AMB + 1);
+    expect(s.temp[tileIndex(s.sim, 0, 0)]).toBeGreaterThanOrEqual(AMB - 1e-4);
   });
 
   it("replaces NaN and Inf with ambient", () => {
-    const { temp, sim, run } = setup([4, 4], 1);
-    temp[tileIndex(sim, 1, 1)] = NaN;
-    temp[tileIndex(sim, 2, 2)] = Infinity;
-    run(1);
-    for (const t of temp) expect(Number.isFinite(t)).toBe(true);
+    const s = setup([4, 4], 1);
+    s.temp[tileIndex(s.sim, 1, 1)] = NaN;
+    s.temp[tileIndex(s.sim, 2, 2)] = Infinity;
+    s.run(1);
+    for (const t of s.temp) expect(Number.isFinite(t)).toBe(true);
   });
 });

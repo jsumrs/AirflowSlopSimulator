@@ -20,6 +20,19 @@ export const K_MAX = K_AIR;
 /** Heater output, C/s added to each of its cells per output level while below target. */
 export const HEATER_POWER = 40;
 
+/** Fan target air speed per level, tiles/s. */
+export const FAN_SPEED_PER_LEVEL = 2.5;
+/** How fast a fan pulls the air in its cells toward its target velocity, 1/s. */
+export const FAN_RESPONSE = 20;
+/** Buoyancy (gravity on): upward acceleration per C above ambient, tiles/s^2. */
+export const BUOYANCY = 0.08;
+/** Vorticity confinement strength at Swirl = 1. */
+export const VORTICITY_STRENGTH = 1.5;
+/** Jacobi iterations for the pressure solve. */
+export const PRESSURE_ITERATIONS = 30;
+/** Sanity clamp for air speed, tiles/s. */
+export const V_MAX = 40;
+
 /** Sanity clamp for temperature. */
 export const T_MIN = -100;
 export const T_MAX = 300;
