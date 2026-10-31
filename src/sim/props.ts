@@ -8,7 +8,8 @@ export const PROPS_STRIDE = 8;
 /**
  * Per-tile solver properties, shared by the GPU solver and the CPU reference.
  *   A: [0] conductivity, [1] solid (blocks air, 0/1), [2] heater target C, [3] heater output level (0 = none)
- *   B: [4] fan direction x, [5] fan direction y (unit vector, y down), [6] fan target speed tiles/s (0 = none), [7] unused
+ *   B: [4] fan direction x, [5] fan direction y (unit vector, y down), [6] fan target speed tiles/s (0 = none),
+ *      [7] fan sweep-speed level while oscillating (0 = fixed direction)
  */
 export function tileProps(layout: Layout, i: number, out: Float32Array, o: number): void {
   let k = K_AIR;
@@ -18,6 +19,7 @@ export function tileProps(layout: Layout, i: number, out: Float32Array, o: numbe
   let fx = 0;
   let fy = 0;
   let speed = 0;
+  let sweep = 0;
   switch (layout.typeAt(i)) {
     case TileType.Wall:
       k = K_WALL;
@@ -31,6 +33,7 @@ export function tileProps(layout: Layout, i: number, out: Float32Array, o: numbe
         fx = dx / len;
         fy = dy / len;
         speed = f.level * FAN_SPEED_PER_LEVEL;
+        if (f.oscillate) sweep = f.sweepSpeed;
       }
       break;
     }
@@ -58,7 +61,7 @@ export function tileProps(layout: Layout, i: number, out: Float32Array, o: numbe
   out[o + 4] = fx;
   out[o + 5] = fy;
   out[o + 6] = speed;
-  out[o + 7] = 0;
+  out[o + 7] = sweep;
 }
 
 export function buildProps(layout: Layout): Float32Array {

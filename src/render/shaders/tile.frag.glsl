@@ -4,6 +4,11 @@ precision highp int;
 precision highp usampler2D;
 precision highp sampler2D;
 
+// Tile grid, drawn in two layers so particles and streamlines sit between them:
+//   uLayer 0: base fill (air, or the heat map), opaque.
+//   uLayer 1: tile glyphs, airflow arrows, hover, grid lines and selection, with
+//             premultiplied alpha (transparent over plain air).
+uniform int uLayer;
 uniform usampler2D uTiles;
 uniform sampler2D uTemp;  // R32F temperature, sim resolution
 uniform ivec2 uSim;       // sim grid size
@@ -24,6 +29,9 @@ uniform float uAmbient;
 uniform ivec2 uSelected; // (-1,-1) = none
 uniform ivec2 uHover;
 uniform vec2 uDirs[8];   // unit direction vectors, y down
+uniform float uSimTime;    // sim seconds (wrapped), drives the heater pulse
+uniform float uSweepPhase; // sweepPhase(sim time), same as the solver
+uniform float uSweepHalf;  // SWEEP_HALF_ANGLE
 
 out vec4 outColor;
 
@@ -35,6 +43,9 @@ const vec3 FAN_BG = vec3(0.82, 0.84, 0.86);
 const vec3 GLASS = vec3(0.62, 0.80, 0.92);
 const vec3 INK = vec3(0.12, 0.13, 0.15);
 const vec3 ACCENT = vec3(1.0, 0.48, 0.0);
+const vec3 FAN_OFF = vec3(0.60, 0.62, 0.66);
+const vec3 HEAT_GLOW = vec3(1.0, 0.62, 0.15);
+const float TAU = 6.2831853;
 
 // Heat ramp: blue (uLo) -> white (ambient) -> red (uHi). White always sits at ambient.
 vec3 heatColor(float c) {
@@ -58,11 +69,13 @@ float tempAt(vec2 t) {
   return mix(mix(a, bx, fr.x), mix(cy, d, fr.x), fr.y);
 }
 
-// Fan level colour, a secondary cue: green 1-2, yellow 3, red 4-5.
+// Fan level colour: green 1, yellow 3, red 5, blended in between.
 vec3 levelColor(float level) {
-  if (level < 2.5) return vec3(0.1, 0.9, 0.25);
-  if (level < 3.5) return vec3(1.0, 0.85, 0.0);
-  return vec3(0.95, 0.1, 0.1);
+  vec3 green = vec3(0.10, 0.78, 0.25);
+  vec3 yellow = vec3(1.0, 0.82, 0.0);
+  vec3 red = vec3(0.93, 0.12, 0.10);
+  float t = clamp((level - 1.0) * 0.25, 0.0, 1.0);
+  return t < 0.5 ? mix(green, yellow, t * 2.0) : mix(yellow, red, t * 2.0 - 1.0);
 }
 
 float sdBox(vec2 p, vec2 c, vec2 h) {
@@ -92,78 +105,127 @@ float sdFlowArrow(vec2 q, float len) {
   return min(shaft, max(e1, e2));
 }
 
-// Zoomed in: one sharp chevron per level, stacked behind the front one. Tip at x = tip.
+// Zoomed in: one sharp chevron per level (the level ticks), stacked behind the front one.
 float sdChevron(vec2 q, float tip) {
   float band = abs(q.x - tip + abs(q.y)) * 0.7071;
   return max(band - 0.025, abs(q.y) - 0.25);
 }
 
+vec2 rotate(vec2 v, float a) {
+  float c = cos(a);
+  float s = sin(a);
+  return vec2(c * v.x - s * v.y, s * v.x + c * v.y);
+}
+
+// Composite colour `c` at coverage `a` over premultiplied `o`.
+void over(inout vec4 o, vec3 c, float a) {
+  o = o * (1.0 - a) + vec4(c * a, a);
+}
+
+// Fan: arrow (zoomed out) or level chevrons (zoomed in), coloured by level, grey when
+// off. While oscillating the arrow swings with the solver's sweep, over a faint arc
+// showing the sweep range.
+vec4 fanGlyph(uvec4 d, vec2 f, float aa, vec3 under) {
+  vec3 col = uHeatOn > 0.5 ? mix(under, FAN_BG, 0.45) : FAN_BG;
+  float level = max(float(d.b), 1.0);
+  bool on = (d.g & 128u) != 0u;
+  bool osc = (d.g & 8u) != 0u;
+  vec2 setDir = uDirs[d.g & 7u];
+  vec2 v = setDir;
+  if (on && osc) v = rotate(setDir, uSweepHalf * sin(float((d.g >> 4) & 7u) * uSweepPhase));
+
+  if (osc && uScale >= 20.0 * uDpr) {
+    float r = length(f);
+    float ang = acos(clamp(dot(f / max(r, 1e-4), setDir), -1.0, 1.0));
+    float ring = abs(r - 0.42) - max(0.015, 0.5 * aa);
+    float wedge = (ang - uSweepHalf) * r;
+    float arc = max(ring, wedge);
+    col = mix(col, INK, (on ? 0.4 : 0.25) * (1.0 - smoothstep(-aa, aa, arc)));
+  }
+
+  vec2 q = vec2(dot(f, v), dot(f, vec2(-v.y, v.x)));
+  float dist = 1e3;
+  if (uScale >= 24.0 * uDpr) {
+    float front = 0.125 + 0.07 * (level - 1.0);
+    for (int k = 0; k < 5; k++) {
+      if (float(k) >= level) break;
+      dist = min(dist, sdChevron(q, front - 0.14 * float(k)));
+    }
+  } else {
+    dist = sdArrow(q, level);
+  }
+  // Thin outline (at least one device px) keeps every colour readable from afar.
+  // Off fans are dimmed: grey fill and a soft outline.
+  vec3 ink = on ? levelColor(level) : FAN_OFF;
+  vec3 outline = on ? INK : mix(INK, FAN_BG, 0.45);
+  float ow = max(0.03, aa);
+  col = mix(col, outline, 1.0 - smoothstep(ow - aa, ow + aa, dist));
+  col = mix(col, ink, 1.0 - smoothstep(-aa, aa, dist));
+  return vec4(col, 1.0);
+}
+
+// Heater: filled with its target temperature on the heat scale, radiator lines for
+// the output rate (once tiles are big enough), and a slow glow while below target.
+vec4 heaterGlyph(uvec4 d, ivec2 ti, vec2 f, float aa) {
+  float target = float(d.b);
+  vec3 col = heatColor(target);
+  float tileTemp = texelFetch(uTileAvg, ti, 0).r;
+  if (d.g > 0u && tileTemp < target - 0.5) {
+    float pulse = 0.5 + 0.5 * sin(TAU * uSimTime);
+    col = mix(col, HEAT_GLOW, 0.35 * pulse);
+  }
+  if (uScale >= 10.0 * uDpr) {
+    float lines = float(d.g);
+    float th = max(0.04, aa);
+    for (int i = 0; i < 5; i++) {
+      if (float(i) >= lines) break;
+      float dist = sdBox(f, vec2(0.0, 0.34 - 0.15 * float(i)), vec2(0.3, th));
+      col = mix(col, INK, 1.0 - smoothstep(-aa, aa, dist));
+    }
+  }
+  float inset = max(abs(f.x), abs(f.y));
+  col = mix(col, INK, smoothstep(0.5 - 3.0 * aa, 0.5 - 2.0 * aa, inset));
+  return vec4(col, 1.0);
+}
+
+// Window: closed is a solid pane with glazing bars; open is the frame only.
+vec4 windowGlyph(uvec4 d, vec2 f, float aa) {
+  float inset = max(abs(f.x), abs(f.y));
+  float frame = smoothstep(0.5 - 0.12 - aa, 0.5 - 0.12 + aa, inset);
+  if (d.g == 1u) return vec4(GLASS, 1.0) * frame;
+  vec3 col = mix(GLASS, GLASS * 0.7, frame);
+  float bar = min(abs(f.x), abs(f.y));
+  col = mix(col, GLASS * 0.7, 1.0 - smoothstep(0.02 - aa, 0.02 + aa, bar));
+  return vec4(col, 1.0);
+}
+
 void main() {
   vec2 px = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
   vec2 t = (px - uOrigin) / uScale;
-  if (t.x < 0.0 || t.y < 0.0 || t.x >= float(uGrid.x) || t.y >= float(uGrid.y)) {
-    outColor = vec4(BG_OUTSIDE, 1.0);
+  bool outside = t.x < 0.0 || t.y < 0.0 || t.x >= float(uGrid.x) || t.y >= float(uGrid.y);
+  vec3 air = outside ? BG_OUTSIDE : (uHeatOn > 0.5 ? heatColor(tempAt(t)) : AIR);
+  if (uLayer == 0 || outside) {
+    outColor = uLayer == 0 ? vec4(air, 1.0) : vec4(0.0);
     return;
   }
+
   ivec2 ti = ivec2(floor(t));
   vec2 f = fract(t) - 0.5;            // tile-local, -0.5..0.5, y down
   float aa = 1.0 / uScale;            // one device px in tile units
   uvec4 d = texelFetch(uTiles, ti, 0);
   uint type = d.r;
 
-  vec3 air = uHeatOn > 0.5 ? heatColor(tempAt(t)) : AIR;
-  vec3 col = air;
+  vec4 o = vec4(0.0);
   if (type == 1u) {
     // Steel wall with a faint diagonal hatch.
     float h = step(0.5, fract((t.x + t.y) * 2.0));
-    col = WALL * (1.0 - 0.07 * h);
+    o = vec4(WALL * (1.0 - 0.07 * h), 1.0);
   } else if (type == 2u) {
-    col = uHeatOn > 0.5 ? mix(air, FAN_BG, 0.45) : FAN_BG;
-    float level = float(d.b);
-    vec2 v = uDirs[d.g & 7u];
-    vec2 q = vec2(dot(f, v), dot(f, vec2(-v.y, v.x)));
-    bool on = (d.g & 128u) != 0u;
-    vec3 ink = on ? levelColor(level) : vec3(0.58, 0.6, 0.64);
-    float lvl = max(level, 1.0);
-    float dist = 1e3;
-    if (uScale >= 24.0 * uDpr) {
-      // Chevron stack, centred on the tile along the facing direction.
-      float front = 0.125 + 0.07 * (lvl - 1.0);
-      for (int k = 0; k < 5; k++) {
-        if (float(k) >= lvl) break;
-        dist = min(dist, sdChevron(q, front - 0.14 * float(k)));
-      }
-    } else {
-      dist = sdArrow(q, lvl);
-    }
-    // Thin dark outline (at least one device px) keeps every colour readable from afar.
-    float ow = max(0.03, aa);
-    col = mix(col, INK, 1.0 - smoothstep(ow - aa, ow + aa, dist));
-    col = mix(col, ink, 1.0 - smoothstep(-aa, aa, dist));
+    o = fanGlyph(d, f, aa, air);
   } else if (type == 3u) {
-    col = heatColor(float(d.b));
-    // Equal-length horizontal lines stacked up from the bottom: one per output level.
-    if (uScale >= 10.0 * uDpr) {
-      float lines = float(d.g);
-      float th = max(0.04, aa);
-      for (int i = 0; i < 5; i++) {
-        if (float(i) >= lines) break;
-        float dist = sdBox(f, vec2(0.0, 0.34 - 0.15 * float(i)), vec2(0.3, th));
-        col = mix(col, INK, 1.0 - smoothstep(-aa, aa, dist));
-      }
-    }
-    float inset = max(abs(f.x), abs(f.y));
-    col = mix(col, INK, smoothstep(0.5 - 3.0 * aa, 0.5 - 2.0 * aa, inset));
+    o = heaterGlyph(d, ti, f, aa);
   } else if (type == 4u) {
-    float inset = max(abs(f.x), abs(f.y));
-    float frame = smoothstep(0.5 - 0.12 - aa, 0.5 - 0.12 + aa, inset);
-    if (d.g == 1u) {
-      col = mix(air, GLASS, frame);                       // open: frame only
-    } else {
-      col = mix(GLASS, GLASS * 0.7, frame);               // closed: solid pane
-      float bar = min(abs(f.x), abs(f.y));
-      col = mix(col, GLASS * 0.7, 1.0 - smoothstep(0.02 - aa, 0.02 + aa, bar));
-    }
+    o = windowGlyph(d, f, aa);
   }
 
   // Airflow arrows: one per tile, over air, heaters and open windows.
@@ -177,24 +239,25 @@ void main() {
       vec2 dir = vel / speed;
       vec2 q = vec2(dot(f, dir), dot(f, vec2(-dir.y, dir.x)));
       float dist = sdFlowArrow(q, 0.25 + 0.6 * k);
-      col = mix(col, INK, 0.85 * alpha * (1.0 - smoothstep(-aa, aa, dist)));
+      over(o, INK, 0.85 * alpha * (1.0 - smoothstep(-aa, aa, dist)));
     }
   }
 
-  if (ti == uHover) col = mix(col, ACCENT, 0.12);
+  if (ti == uHover) over(o, ACCENT, 0.12);
 
   if (uGridLines > 0.5) {
     float e = min((0.5 - abs(f.x)) * uScale, (0.5 - abs(f.y)) * uScale); // device px to nearest edge
     float line = 1.0 - smoothstep(0.0, 1.0, e);
     float fade = smoothstep(3.0, 10.0, uScale / uDpr);
-    vec3 lc = dot(col, vec3(0.333)) < 0.4 ? vec3(1.0) : vec3(0.0);
-    col = mix(col, lc, 0.3 * line * fade);
+    vec3 under = o.rgb + air * (1.0 - o.a);
+    vec3 lc = dot(under, vec3(0.333)) < 0.4 ? vec3(1.0) : vec3(0.0);
+    over(o, lc, 0.3 * line * fade);
   }
 
   if (ti == uSelected) {
     float e = (0.5 - max(abs(f.x), abs(f.y))) * uScale;
-    col = mix(col, ACCENT, 1.0 - smoothstep(1.5 * uDpr, 2.5 * uDpr, e));
+    over(o, ACCENT, 1.0 - smoothstep(1.5 * uDpr, 2.5 * uDpr, e));
   }
 
-  outColor = vec4(col, 1.0);
+  outColor = o;
 }

@@ -28,8 +28,13 @@ export interface Solver {
   readonly tileShape: Shape;
   readonly quality: SimQuality;
   readonly simShape: Shape;
+  /** Sim seconds since the last reset, wrapped at SWEEP_PERIOD (drives fan oscillation). */
+  readonly time: number;
 
-  /** New grid size or quality. Resets the fields to ambient. */
+  /**
+   * New grid size or quality. Resamples the current fields onto the new grid; tiles
+   * that are new (the grid grew) start at ambient and still.
+   */
   resize(tileShape: Shape, quality: SimQuality): void;
   /** Upload changed tiles (drains `changes`). */
   setTiles(layout: Layout, changes: DirtyTracker): void;

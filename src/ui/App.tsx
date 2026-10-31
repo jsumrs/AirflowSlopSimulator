@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { attachCanvasInput } from "../input/canvasInput";
 import { sameShape, tileCoords, tileIndex } from "../model/grid";
 import { TileType } from "../model/tiles";
+import { type FlowInputs, Particles, Streamlines } from "../render/flowOverlays";
 import { createGlContext, resizeToDisplay } from "../render/gl";
-import { type DrawOptions, TileRenderer } from "../render/tileRenderer";
+import { type DrawOptions, LAYER_BASE, LAYER_GLYPHS, TileRenderer } from "../render/tileRenderer";
 import { clampView, fitView } from "../render/view";
 import { GlSolver } from "../sim/glSolver";
 import { MAX_STEPS_PER_FRAME, SIM_DT } from "../sim/params";
@@ -31,6 +32,7 @@ import {
   selected,
   settings,
   simRequests,
+  speed,
   stepSim,
   readings,
   readingsRev,
@@ -62,6 +64,15 @@ export function App() {
     solver.setParams({ ambientC: initial.ambientC, gravity: initial.gravity, swirl: initial.swirl });
     solver.reset();
     const solverTiles = layout.track();
+    const particles = new Particles(gl);
+    const streamlines = new Streamlines(gl);
+    const flow: FlowInputs = {
+      velocity: solver.velocity,
+      simShape: solver.simShape,
+      quality: solver.quality,
+      tiles: renderer.tiles,
+      tileShape: layout.shape,
+    };
     const range = { lo: 0, hi: 100 };
 
     const sel: [number, number] = [-1, -1];
@@ -71,6 +82,7 @@ export function App() {
       dpr: 1,
       showGrid: true,
       ambientC: 20,
+      simTime: 0,
       heat: {
         texture: solver.temperature,
         simShape: solver.simShape,
@@ -144,6 +156,10 @@ export function App() {
     let wasAuto = false;
     let lastSel: number | null = null;
     let lastHover: number | null = null;
+    /** Streamlines are re-traced at most every TRACE_EVERY frames while the air changes. */
+    const TRACE_EVERY = 4;
+    let lastTrace = -Infinity;
+    let traceStale = true;
 
     const updateRange = (lo: number, hi: number): boolean => {
       if (Math.abs(lo - range.lo) < 0.05 && Math.abs(hi - range.hi) < 0.05) return false;
@@ -159,6 +175,7 @@ export function App() {
       const realDt = Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
       const cfg = settings.peek();
+      const wantRender = consumeRender();
 
       // --- simulation ---
       if (!sameShape(solver.tileShape, layout.shape) || solver.quality !== cfg.simQuality) {
@@ -174,9 +191,12 @@ export function App() {
         fieldChanged = true;
       }
       let steps = 0;
+      /** Sim seconds the particles move this frame: smooth at every speed, frozen while paused. */
+      let flowDt = 0;
       if (playing.peek()) {
         simRequests.steps = 0;
-        acc += realDt;
+        flowDt = realDt * speed.peek();
+        acc += flowDt;
         while (acc >= SIM_DT && steps < MAX_STEPS_PER_FRAME) {
           solver.step(SIM_DT);
           acc -= SIM_DT;
@@ -186,8 +206,32 @@ export function App() {
       } else {
         acc = 0;
         for (; simRequests.steps > 0; simRequests.steps--, steps++) solver.step(SIM_DT);
+        flowDt = steps * SIM_DT;
       }
       if (steps > 0) fieldChanged = true;
+
+      // --- flow overlays (offscreen passes; they read the tile texture, so sync it first) ---
+      renderer.sync(layout);
+      flow.velocity = solver.velocity;
+      flow.simShape = solver.simShape;
+      flow.quality = solver.quality;
+      flow.tileShape = layout.shape;
+      let overlaysMoved = false;
+      if (cfg.overlays.particles && (flowDt > 0 || particles.needsSpawn)) {
+        particles.step(flowDt, flow);
+        overlaysMoved = true;
+      }
+      if (steps > 0 || wantRender) traceStale = true;
+      if (
+        cfg.overlays.streamlines &&
+        traceStale &&
+        (frameNo - lastTrace >= TRACE_EVERY || !streamlines.traced)
+      ) {
+        streamlines.trace(flow);
+        lastTrace = frameNo;
+        traceStale = false;
+        overlaysMoved = true;
+      }
 
       // --- readback: auto heat scale, selected tile, hovered tile ---
       // A readback stalls the GPU only when the field changed since the last one, so
@@ -222,10 +266,11 @@ export function App() {
       wasAuto = auto;
 
       // --- draw ---
-      if (!consumeRender() && steps === 0 && !rangeChanged) return;
+      if (!wantRender && steps === 0 && !rangeChanged && !overlaysMoved) return;
       opts.dpr = window.devicePixelRatio || 1;
       opts.showGrid = cfg.overlays.gridLines;
       opts.ambientC = cfg.ambientC;
+      opts.simTime = solver.time;
       opts.heat.texture = solver.temperature;
       opts.heat.simShape = solver.simShape;
       opts.heat.quality = solver.quality;
@@ -243,14 +288,18 @@ export function App() {
         sel[1] = coords[1]!;
       }
       resizeToDisplay(gl, opts.dpr);
-      renderer.sync(layout);
-      renderer.draw(opts);
+      renderer.draw(opts, LAYER_BASE);
+      if (cfg.overlays.streamlines) streamlines.draw(opts);
+      if (cfg.overlays.particles) particles.draw(opts);
+      renderer.draw(opts, LAYER_GLYPHS);
     };
     raf = requestAnimationFrame(frame);
 
     return () => {
       cancelAnimationFrame(raf);
       solver.dispose();
+      particles.dispose();
+      streamlines.dispose();
       stopEffect();
       detachInput();
       observer.disconnect();

@@ -300,6 +300,7 @@ button:disabled {
 
 .simbar .group {
   display: flex;
+  align-items: center;
 }
 
 .simbar .group > button + button {
@@ -406,4 +407,18 @@ select {
 
 .inspector-extra {
   color: var(--muted);
+}
+
+.simbar .label {
+  margin-right: 0.4rem;
+  color: var(--muted);
+}
+
+.simbar .group > .label + button {
+  margin-left: 0;
+}
+
+.simbar .group button {
+  padding: 0.3rem 0.5rem;
+  min-width: 2.4rem;
 }

@@ -69,6 +69,9 @@ export const historyRev = signal(0);
 export const notice = signal<string | null>(null);
 /** Sim playback. Sim state is not part of the scene: never saved, never undone. */
 export const playing = signal(true);
+/** Sim speed multiplier. A playback control like `playing`: not saved, not undone. */
+export const SPEEDS = [0.25, 0.5, 1, 2, 4] as const;
+export const speed = signal<number>(1);
 /** Current heat map scale range in C (fixed from settings, or auto from the field). */
 export const heatRange = signal({ lo: DEFAULT_SETTINGS.heatScale.minC, hi: DEFAULT_SETTINGS.heatScale.maxC });
 /**
@@ -250,6 +253,10 @@ export function setGravity(gravity: boolean): void {
 
 export function setSwirl(swirl: number): void {
   updateSettings("swirl", { ...scene.settings, swirl });
+}
+
+export function setSimQuality(simQuality: Settings["simQuality"]): void {
+  updateSettings("simQuality", { ...scene.settings, simQuality });
 }
 
 export function setAutoScale(auto: boolean): void {

@@ -9,11 +9,14 @@ import {
   HEATER_POWER,
   K_OUTSIDE,
   PRESSURE_ITERATIONS,
+  SWEEP_HALF_ANGLE,
+  SWEEP_PERIOD,
   T_MAX,
   T_MIN,
   V_MAX,
   VORTICITY_STRENGTH,
   diffusionSubsteps,
+  sweepPhase,
 } from "./params";
 import { PROPS_STRIDE, tileProps } from "./props";
 import ADVECT_TEMP from "./shaders/advectTemp.frag.glsl?raw";
@@ -25,6 +28,7 @@ import DIVERGENCE from "./shaders/divergence.frag.glsl?raw";
 import HEAT_SOURCE from "./shaders/heatSource.frag.glsl?raw";
 import PRESSURE from "./shaders/pressure.frag.glsl?raw";
 import PROJECT from "./shaders/project.frag.glsl?raw";
+import RESAMPLE from "./shaders/resample.frag.glsl?raw";
 import TILE_AVERAGE from "./shaders/tileAverage.frag.glsl?raw";
 import VEL_SOURCE from "./shaders/velSource.frag.glsl?raw";
 import VORTICITY from "./shaders/vorticity.frag.glsl?raw";
@@ -46,6 +50,16 @@ type Uniforms = Record<string, WebGLUniformLocation>;
 interface Pass {
   program: WebGLProgram;
   u: Uniforms;
+}
+
+/** Every render target that depends on the grid size. */
+interface Fields {
+  temp: Pair;
+  vel: Pair;
+  pressure: Pair;
+  div: Target;
+  curl: Target;
+  avg: Target;
 }
 
 /** A ping-pong pair: read `a`, write `b`, then swap. */
@@ -77,15 +91,11 @@ export class GlSolver implements Solver {
   tileShape: Shape = [0, 0];
   quality: SimQuality = 2;
   simShape: Shape = [0, 0];
+  time = 0;
 
   private vao: WebGLVertexArrayObject;
   private passes: Record<string, Pass> = {};
-  private temp!: Pair;
-  private vel!: Pair;
-  private pressure!: Pair;
-  private div!: Target;
-  private curl!: Target;
-  private avg!: Target;
+  private fields: Fields | null = null;
   private propsA: WebGLTexture;
   private propsB: WebGLTexture;
   private propsDataA = new Float32Array(0);
@@ -95,7 +105,6 @@ export class GlSolver implements Solver {
   private readBuf = new Float32Array(0);
   private params: SimParams = { ambientC: 20, gravity: false, swirl: 0 };
   private layout: Layout | null = null;
-  private allocated = false;
   /** Tile averages need recomputing / reading back. */
   private avgStale = true;
   private readStale = true;
@@ -120,6 +129,7 @@ export class GlSolver implements Solver {
       pressure: PRESSURE,
       project: PROJECT,
       tileAverage: TILE_AVERAGE,
+      resample: RESAMPLE,
     };
     for (const [name, src] of Object.entries(sources)) this.passes[name] = this.compile(src);
     this.propsA = gl.createTexture()!;
@@ -127,9 +137,33 @@ export class GlSolver implements Solver {
     this.resize(tileShape, quality);
   }
 
+  private get temp(): Pair {
+    return this.fields!.temp;
+  }
+  private get vel(): Pair {
+    return this.fields!.vel;
+  }
+  private get pressure(): Pair {
+    return this.fields!.pressure;
+  }
+  private get div(): Target {
+    return this.fields!.div;
+  }
+  private get curl(): Target {
+    return this.fields!.curl;
+  }
+  private get avg(): Target {
+    return this.fields!.avg;
+  }
+
   /** Current temperature texture (R32F, sim resolution) for the renderer. */
   get temperature(): WebGLTexture {
     return this.temp.a.tex;
+  }
+
+  /** Current velocity texture (RG32F, sim resolution, tiles/s, y down) for the renderer. */
+  get velocity(): WebGLTexture {
+    return this.vel.a.tex;
   }
 
   /** Per-tile means (RGBA32F, tile resolution): r = temperature, g/b = velocity. */
@@ -193,20 +227,21 @@ export class GlSolver implements Solver {
     this.gl.deleteFramebuffer(t.fbo);
   }
 
-  private freeTargets(): void {
-    if (!this.allocated) return;
-    for (const p of [this.temp, this.vel, this.pressure]) {
+  private freeFields(f: Fields): void {
+    for (const p of [f.temp, f.vel, f.pressure]) {
       this.free(p.a);
       this.free(p.b);
     }
-    this.free(this.div);
-    this.free(this.curl);
-    this.free(this.avg);
+    this.free(f.div);
+    this.free(f.curl);
+    this.free(f.avg);
   }
 
   resize(tileShape: Shape, quality: SimQuality): void {
     const gl = this.gl;
-    this.freeTargets();
+    const old = this.fields;
+    const oldSim = this.simShape;
+    const oldQuality = this.quality;
     this.tileShape = [...tileShape];
     this.quality = quality;
     this.simShape = simShapeFor(tileShape, quality);
@@ -215,13 +250,14 @@ export class GlSolver implements Solver {
 
     const r = () => this.target(sw, sh, gl.R32F, gl.RED);
     const rg = () => this.target(sw, sh, gl.RG32F, gl.RG);
-    this.temp = new Pair(r(), r());
-    this.vel = new Pair(rg(), rg());
-    this.pressure = new Pair(r(), r());
-    this.div = r();
-    this.curl = r();
-    this.avg = this.target(tw, th, gl.RGBA32F, gl.RGBA);
-    this.allocated = true;
+    this.fields = {
+      temp: new Pair(r(), r()),
+      vel: new Pair(rg(), rg()),
+      pressure: new Pair(r(), r()),
+      div: r(),
+      curl: r(),
+      avg: this.target(tw, th, gl.RGBA32F, gl.RGBA),
+    };
     this.readBuf = new Float32Array(tw * th * 4);
 
     const n = tileCount(tileShape);
@@ -230,7 +266,33 @@ export class GlSolver implements Solver {
     this.setupTexture(this.propsA, tw, th, gl.RGBA32F, gl.RGBA, this.propsDataA);
     this.setupTexture(this.propsB, tw, th, gl.RGBA32F, gl.RGBA, this.propsDataB);
     this.layout = null; // force a full props upload on the next setTiles
-    this.reset();
+
+    if (!old) {
+      this.reset();
+      return;
+    }
+    // Carry the air and heat over to the new grid, then drop the old targets.
+    this.clear(this.temp.b, this.params.ambientC);
+    for (const t of [this.vel.b, this.pressure.a, this.pressure.b, this.div, this.curl]) this.clear(t, 0);
+    this.resample(old.temp.a, this.temp.a, oldSim, oldQuality, this.params.ambientC);
+    this.resample(old.vel.a, this.vel.a, oldSim, oldQuality, 0);
+    this.freeFields(old);
+    this.avgStale = true;
+    this.readStale = true;
+  }
+
+  private resample(src: Target, dst: Target, srcSim: Shape, srcQuality: number, fill: number): void {
+    const gl = this.gl;
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(this.vao);
+    gl.viewport(0, 0, this.simShape[0]!, this.simShape[1]!);
+    const u = this.begin(this.passes.resample!, dst);
+    this.bind(u.uSrc, UNIT_MAIN, src.tex);
+    if (u.uSrcSim) gl.uniform2i(u.uSrcSim, srcSim[0]!, srcSim[1]!);
+    if (u.uSrcQuality) gl.uniform1i(u.uSrcQuality, srcQuality);
+    if (u.uFill) gl.uniform4f(u.uFill, fill, 0, 0, 0);
+    this.draw();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
   setTiles(layout: Layout, changes: DirtyTracker): void {
@@ -288,6 +350,7 @@ export class GlSolver implements Solver {
       this.clear(t, 0);
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.time = 0;
     this.avgStale = true;
     this.readStale = true;
   }
@@ -351,6 +414,8 @@ export class GlSolver implements Solver {
     this.f(u.uGravity, this.params.gravity ? 1 : 0);
     this.f(u.uBuoyancy, BUOYANCY);
     this.f(u.uAmbient, amb);
+    this.f(u.uSweepPhase, sweepPhase(this.time));
+    this.f(u.uSweepHalf, SWEEP_HALF_ANGLE);
     this.draw();
     this.vel.swap();
 
@@ -424,6 +489,7 @@ export class GlSolver implements Solver {
     this.vel.swap();
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.time = (this.time + dt) % SWEEP_PERIOD;
     this.avgStale = true;
     this.readStale = true;
   }
@@ -465,7 +531,8 @@ export class GlSolver implements Solver {
 
   dispose(): void {
     const gl = this.gl;
-    this.freeTargets();
+    if (this.fields) this.freeFields(this.fields);
+    this.fields = null;
     gl.deleteTexture(this.propsA);
     gl.deleteTexture(this.propsB);
     gl.deleteVertexArray(this.vao);

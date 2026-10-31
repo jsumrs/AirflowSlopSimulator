@@ -52,7 +52,7 @@ Every milestone also needs `bunx tsc --noEmit` and `bunx vitest run` to pass.
 
 **Done when:** a fan pushes air out the front and pulls it in from behind, air goes around walls, and with gravity on, warm air rises from a heater.
 
-## [ ] 5. Visual polish and sim settings
+## [x] 5. Visual polish and sim settings
 - Particle overlay with fading trails. Streamline overlay (section 6).
 - Full glyphs: fan level ticks, oscillation arc, dimmed when off, heater rate pips and pulse, open/closed window. Detail scales with zoom (sections 4.4, 7.4).
 - Fan oscillation and sweep speed.

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "grid": {
+    "width": 28,
+    "height": 20
+  },
+  "settings": {
+    "ambientC": 20,
+    "gravity": false,
+    "simQuality": 2,
+    "swirl": 0.3,
+    "overlays": {
+      "heatMap": true,
+      "arrows": true,
+      "particles": true,
+      "streamlines": false,
+      "gridLines": true
+    },
+    "heatScale": {
+      "auto": false,
+      "minC": 0,
+      "maxC": 100
+    }
+  },
+  "tiles": [
+    {
+      "x": 7,
+      "y": 10,
+      "type": "fan",
+      "dir": "E",
+      "on": true,
+      "level": 4,
+      "oscillate": true,
+      "sweepSpeed": 2
+    },
+    {
+      "x": 9,
+      "y": 10,
+      "type": "heater",
+      "targetC": 80,
+      "outputRate": 5
+    }
+  ]
+}

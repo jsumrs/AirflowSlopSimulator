@@ -69,3 +69,60 @@ export function createProgram(gl: WebGL2RenderingContext, vs: string, fs: string
   }
   return program;
 }
+
+/** Paste shared GLSL chunks in place of `// #include name` lines. */
+export function resolveIncludes(src: string, chunks: Record<string, string>): string {
+  return src.replace(/^\/\/ #include (\w+)$/gm, (line, name: string) => {
+    const chunk = chunks[name];
+    if (chunk === undefined) throw new Error(`Unknown shader include: ${name}`);
+    return chunk;
+  });
+}
+
+/** Active uniform locations of a program, by name. */
+export function uniformsOf(gl: WebGL2RenderingContext, program: WebGLProgram): Record<string, WebGLUniformLocation> {
+  const u: Record<string, WebGLUniformLocation> = {};
+  const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS) as number;
+  for (let i = 0; i < count; i++) {
+    const name = gl.getActiveUniform(program, i)!.name;
+    u[name] = gl.getUniformLocation(program, name)!;
+  }
+  return u;
+}
+
+export interface FloatTarget {
+  tex: WebGLTexture;
+  fbo: WebGLFramebuffer;
+  w: number;
+  h: number;
+}
+
+/** RGBA32F render target with nearest sampling. */
+export function createFloatTarget(
+  gl: WebGL2RenderingContext,
+  w: number,
+  h: number,
+  data: Float32Array | null = null,
+): FloatTarget {
+  const tex = gl.createTexture()!;
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+  const fbo = gl.createFramebuffer()!;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (status !== gl.FRAMEBUFFER_COMPLETE) {
+    throw new Error(`Float render target incomplete (0x${status.toString(16)}).`);
+  }
+  return { tex, fbo, w, h };
+}
+
+export function deleteFloatTarget(gl: WebGL2RenderingContext, t: FloatTarget): void {
+  gl.deleteTexture(t.tex);
+  gl.deleteFramebuffer(t.fbo);
+}

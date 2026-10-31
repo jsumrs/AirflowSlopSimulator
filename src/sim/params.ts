@@ -24,6 +24,20 @@ export const HEATER_POWER = 40;
 export const FAN_SPEED_PER_LEVEL = 2.5;
 /** How fast a fan pulls the air in its cells toward its target velocity, 1/s. */
 export const FAN_RESPONSE = 20;
+/**
+ * Fan oscillation: sweep cycles per second per sweep-speed level (level 1 = 20 s per
+ * cycle, level 5 = 4 s). Sim time wraps at SWEEP_PERIOD, which every level divides.
+ */
+export const SWEEP_HZ_PER_LEVEL = 0.05;
+export const SWEEP_PERIOD = 1 / SWEEP_HZ_PER_LEVEL;
+/** Oscillating fans sweep this far each side of their set direction, radians. */
+export const SWEEP_HALF_ANGLE = Math.PI / 4;
+
+/** Sweep phase shared by the solver and the fan glyph: angle = half * sin(level * phase). */
+export function sweepPhase(simTime: number): number {
+  return 2 * Math.PI * SWEEP_HZ_PER_LEVEL * simTime;
+}
+
 /** Buoyancy (gravity on): upward acceleration per C above ambient, tiles/s^2. */
 export const BUOYANCY = 0.08;
 /** Vorticity confinement strength at Swirl = 1. */

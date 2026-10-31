@@ -3,7 +3,7 @@ import { type Shape, tileIndex } from "../model/grid";
 import { Layout } from "../model/layout";
 import { Direction, TileType } from "../model/tiles";
 import { CpuSim } from "./cpuReference";
-import { SIM_DT, V_MAX } from "./params";
+import { SIM_DT, SWEEP_PERIOD, V_MAX } from "./params";
 import { buildProps } from "./props";
 
 const AMB = 20;
@@ -78,6 +78,27 @@ describe("CPU flow reference", () => {
     expect(behind).toBeGreaterThan(0.2); // intake: air behind moves toward the fan
     // Air beside the fan is drawn in toward the intake side, not pushed out.
     assertFinite(cpu);
+  });
+
+  it("an oscillating fan sweeps 45 degrees each side of its set direction", () => {
+    const { cpu, seconds, layout } = sim([16, 16], 1, (l) => fan(l, 8, 8, Direction.E, 4));
+    layout.updateFan(tileIndex(layout.shape, 8, 8), { oscillate: true, sweepSpeed: 5 });
+    cpu.setProps(buildProps(layout));
+    const period = SWEEP_PERIOD / 5;
+    const angleAt = () => Math.atan2(cpu.tileMean("v", 8, 8), cpu.tileMean("u", 8, 8));
+    seconds(period / 4); // sin peaks: rotated +45 degrees (toward SE, y is down)
+    expect(angleAt()).toBeGreaterThan(0.5);
+    expect(angleAt()).toBeLessThan(Math.PI / 4 + 0.1);
+    seconds(period / 2); // sin troughs: rotated -45 degrees (toward NE)
+    expect(angleAt()).toBeLessThan(-0.5);
+    expect(angleAt()).toBeGreaterThan(-Math.PI / 4 - 0.1);
+    assertFinite(cpu);
+  });
+
+  it("a fan that is not oscillating keeps its direction", () => {
+    const { cpu, seconds } = sim([16, 16], 1, (l) => fan(l, 8, 8, Direction.E, 4));
+    seconds(1);
+    expect(Math.abs(cpu.tileMean("v", 8, 8))).toBeLessThan(0.05);
   });
 
   it("an off fan moves no air", () => {

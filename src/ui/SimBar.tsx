@@ -1,16 +1,42 @@
+import type { Settings } from "../model/settings";
 import { keepFocus } from "./focus";
 import {
+  SPEEDS,
   heatRange,
   playing,
   resetSim,
   setAutoScale,
   setGravity,
   setOverlay,
+  setSimQuality,
   setSwirl,
   settings,
+  speed,
   stepSim,
   togglePlay,
 } from "./store";
+
+const QUALITIES: readonly Settings["simQuality"][] = [1, 2, 4];
+
+function speedLabel(s: number): string {
+  return s === 0.25 ? "¼×" : s === 0.5 ? "½×" : `${s}×`;
+}
+
+function OverlayToggle({ name, label, title }: { name: keyof Settings["overlays"]; label: string; title?: string }) {
+  return (
+    <label title={title}>
+      <input
+        type="checkbox"
+        checked={settings.value.overlays[name]}
+        onChange={(e) => {
+          setOverlay(name, e.currentTarget.checked);
+          e.currentTarget.blur();
+        }}
+      />
+      {label}
+    </label>
+  );
+}
 
 const BLUE = "rgb(51, 102, 230)";
 const RED = "rgb(230, 38, 26)";
@@ -68,17 +94,42 @@ export function SimBar() {
           Reset sim
         </button>
       </div>
-      <label>
-        <input
-          type="checkbox"
-          checked={s.overlays.heatMap}
-          onChange={(e) => {
-            setOverlay("heatMap", e.currentTarget.checked);
-            e.currentTarget.blur();
-          }}
-        />
-        Heat map
-      </label>
+      <div class="group" role="radiogroup" aria-label="Sim speed" title="Sim speed">
+        <span class="label">Speed</span>
+        {SPEEDS.map((v) => (
+          <button
+            key={v}
+            class={speed.value === v ? "active" : ""}
+            role="radio"
+            aria-checked={speed.value === v}
+            onMouseDown={keepFocus}
+            onClick={() => (speed.value = v)}
+          >
+            {speedLabel(v)}
+          </button>
+        ))}
+      </div>
+      <div
+        class="group"
+        role="radiogroup"
+        aria-label="Sim quality"
+        title="Sim cells per tile edge. Higher looks smoother and costs more."
+      >
+        <span class="label">Quality</span>
+        {QUALITIES.map((q) => (
+          <button
+            key={q}
+            class={s.simQuality === q ? "active" : ""}
+            role="radio"
+            aria-checked={s.simQuality === q}
+            onMouseDown={keepFocus}
+            onClick={() => setSimQuality(q)}
+          >
+            {q}×
+          </button>
+        ))}
+      </div>
+      <OverlayToggle name="heatMap" label="Heat map" />
       <label>
         <input
           type="checkbox"
@@ -91,17 +142,9 @@ export function SimBar() {
         />
         Auto scale
       </label>
-      <label>
-        <input
-          type="checkbox"
-          checked={s.overlays.arrows}
-          onChange={(e) => {
-            setOverlay("arrows", e.currentTarget.checked);
-            e.currentTarget.blur();
-          }}
-        />
-        Arrows
-      </label>
+      <OverlayToggle name="arrows" label="Arrows" title="One arrow per tile: air speed and direction" />
+      <OverlayToggle name="particles" label="Particles" title="Dots that drift with the air" />
+      <OverlayToggle name="streamlines" label="Streamlines" title="Curves that follow the air" />
       <label title="Side view: warm air rises, cool air sinks">
         <input
           type="checkbox"

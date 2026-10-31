@@ -5,11 +5,14 @@ import {
   HEATER_POWER,
   K_OUTSIDE,
   PRESSURE_ITERATIONS,
+  SWEEP_HALF_ANGLE,
+  SWEEP_PERIOD,
   T_MAX,
   T_MIN,
   V_MAX,
   VORTICITY_STRENGTH,
   diffusionSubsteps,
+  sweepPhase,
 } from "./params";
 import { PROPS_STRIDE } from "./props";
 import { simShapeFor } from "./solver";
@@ -46,6 +49,8 @@ export class CpuSim {
   temp: Float32Array;
   vel: Float32Array;
   pressure: Float32Array;
+  /** Sim seconds since reset, wrapped at SWEEP_PERIOD (GlSolver.time). */
+  time = 0;
   private t2: Float32Array;
   private v2: Float32Array;
   private p2: Float32Array;
@@ -115,6 +120,49 @@ export class CpuSim {
   reset(): void {
     this.temp.fill(this.params.ambientC);
     this.vel.fill(0);
+    this.pressure.fill(0);
+    this.time = 0;
+  }
+
+  /**
+   * resample.frag: carry `src`'s temperature and velocity onto this grid (new quality
+   * and/or tile grid, anchored top-left). Tiles `src` didn't have get ambient and still air.
+   */
+  resampleFrom(src: CpuSim): void {
+    const srcTw = src.tileShape[0]!;
+    const srcTh = src.tileShape[1]!;
+    const tap = (f: Float32Array, stride: number, c: number, x: number, y: number) => {
+      const cx = Math.min(src.w - 1, Math.max(0, x));
+      const cy = Math.min(src.h - 1, Math.max(0, y));
+      return f[src.idx(cx, cy) * stride + c]!;
+    };
+    const sample = (f: Float32Array, stride: number, c: number, px: number, py: number) => {
+      const sx = px * src.q - 0.5;
+      const sy = py * src.q - 0.5;
+      const x0 = Math.floor(sx);
+      const y0 = Math.floor(sy);
+      const fx = sx - x0;
+      const fy = sy - y0;
+      const a = tap(f, stride, c, x0, y0) + (tap(f, stride, c, x0 + 1, y0) - tap(f, stride, c, x0, y0)) * fx;
+      const b =
+        tap(f, stride, c, x0, y0 + 1) + (tap(f, stride, c, x0 + 1, y0 + 1) - tap(f, stride, c, x0, y0 + 1)) * fx;
+      return a + (b - a) * fy;
+    };
+    for (let y = 0; y < this.h; y++)
+      for (let x = 0; x < this.w; x++) {
+        const i = this.idx(x, y);
+        const px = (x + 0.5) / this.q;
+        const py = (y + 0.5) / this.q;
+        if (px >= srcTw || py >= srcTh) {
+          this.temp[i] = this.params.ambientC;
+          this.vel[i * 2] = 0;
+          this.vel[i * 2 + 1] = 0;
+          continue;
+        }
+        this.temp[i] = sample(src.temp, 1, 0, px, py);
+        this.vel[i * 2] = sample(src.vel, 2, 0, px, py);
+        this.vel[i * 2 + 1] = sample(src.vel, 2, 1, px, py);
+      }
     this.pressure.fill(0);
   }
 
@@ -204,6 +252,7 @@ export class CpuSim {
   velSource(dt: number): void {
     const amb = this.params.ambientC;
     const k = 1 - Math.exp(-FAN_RESPONSE * dt);
+    const phase = sweepPhase(this.time);
     for (let y = 0; y < this.h; y++)
       for (let x = 0; x < this.w; x++) {
         const i = this.idx(x, y);
@@ -215,8 +264,17 @@ export class CpuSim {
         } else {
           const speed = this.prop(x, y, 6);
           if (speed > 0) {
-            u += (this.prop(x, y, 4) * speed - u) * k;
-            v += (this.prop(x, y, 5) * speed - v) * k;
+            let dx = this.prop(x, y, 4);
+            let dy = this.prop(x, y, 5);
+            const sweep = this.prop(x, y, 7);
+            if (sweep > 0) {
+              const a = SWEEP_HALF_ANGLE * Math.sin(sweep * phase);
+              const ca = Math.cos(a);
+              const sa = Math.sin(a);
+              [dx, dy] = [ca * dx - sa * dy, sa * dx + ca * dy];
+            }
+            u += (dx * speed - u) * k;
+            v += (dy * speed - v) * k;
           }
           if (this.params.gravity) v -= BUOYANCY * (this.temp[i]! - amb) * dt;
         }
@@ -429,6 +487,7 @@ export class CpuSim {
     this.divergence();
     for (let k = 0; k < PRESSURE_ITERATIONS; k++) this.jacobi();
     this.project();
+    this.time = (this.time + dt) % SWEEP_PERIOD;
   }
 
   /** Max |divergence| over air cells (for tests). */

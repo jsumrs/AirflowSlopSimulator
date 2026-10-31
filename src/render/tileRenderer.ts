@@ -2,6 +2,7 @@ import { type Shape, sameShape, tileCoords, tileCount } from "../model/grid";
 import type { DirtyTracker } from "../model/dirty";
 import type { Layout } from "../model/layout";
 import { DIR_VECTORS } from "../model/tiles";
+import { SWEEP_HALF_ANGLE, sweepPhase } from "../sim/params";
 import { createProgram } from "./gl";
 import VERT from "./shaders/fullscreen.vert.glsl?raw";
 import FRAG from "./shaders/tile.frag.glsl?raw";
@@ -13,6 +14,8 @@ export interface DrawOptions {
   dpr: number;
   showGrid: boolean;
   ambientC: number;
+  /** Sim seconds (wrapped), for the oscillating fan arrow and the heater pulse. */
+  simTime: number;
   heat: {
     /** R32F temperature texture at sim resolution. */
     texture: WebGLTexture;
@@ -39,6 +42,11 @@ const ARROW_FULL_SPEED = 6;
 /** Above this many changed tiles, re-upload the whole texture instead. */
 const FULL_UPLOAD_THRESHOLD = 512;
 
+/** Base fill (air or heat map), drawn under the particle and streamline overlays. */
+export const LAYER_BASE = 0;
+/** Glyphs, arrows, hover, grid lines and selection, drawn over everything else. */
+export const LAYER_GLYPHS = 1;
+
 /** Draws the tile grid (fills, glyphs, grid lines) from a tile-data texture. */
 export class TileRenderer {
   private program: WebGLProgram;
@@ -63,6 +71,7 @@ export class TileRenderer {
       "uAmbient", "uSelected", "uHover", "uDirs",
       "uTemp", "uSim", "uQuality", "uHeatOn", "uLo", "uHi",
       "uTileAvg", "uArrows", "uArrowFull",
+      "uLayer", "uSimTime", "uSweepPhase", "uSweepHalf",
     ]) {
       this.u[name] = gl.getUniformLocation(this.program, name);
     }
@@ -71,6 +80,11 @@ export class TileRenderer {
       this.dirs[i * 2] = x / len;
       this.dirs[i * 2 + 1] = y / len;
     });
+  }
+
+  /** RGBA8UI tile data (tileTexture.ts), also read by the flow overlays. */
+  get tiles(): WebGLTexture {
+    return this.texture;
   }
 
   /** Upload changed tiles (or everything after a resize). */
@@ -119,10 +133,23 @@ export class TileRenderer {
     );
   }
 
-  draw(o: DrawOptions): void {
+  /** Draw one layer. The base layer is opaque; the glyph layer blends over it. */
+  draw(o: DrawOptions, layer: typeof LAYER_BASE | typeof LAYER_GLYPHS): void {
     const gl = this.gl;
     const { u } = this;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+    if (layer === LAYER_GLYPHS) {
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    } else {
+      gl.disable(gl.BLEND);
+    }
     gl.useProgram(this.program);
+    gl.uniform1i(u.uLayer!, layer);
+    gl.uniform1f(u.uSimTime!, o.simTime);
+    gl.uniform1f(u.uSweepPhase!, sweepPhase(o.simTime));
+    gl.uniform1f(u.uSweepHalf!, SWEEP_HALF_ANGLE);
     gl.bindVertexArray(this.vao);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
@@ -151,5 +178,6 @@ export class TileRenderer {
     gl.uniform1f(u.uArrows!, o.flow.arrows ? 1 : 0);
     gl.uniform1f(u.uArrowFull!, ARROW_FULL_SPEED);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.BLEND);
   }
 }
