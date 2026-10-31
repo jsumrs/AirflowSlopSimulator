@@ -56,13 +56,6 @@ function TileStats({ i }: { i: number }) {
   );
 }
 
-/** Direction pad layout: compass positions, centre empty. */
-const PAD: (Direction | null)[] = [
-  Direction.NW, Direction.N, Direction.NE,
-  Direction.W, null, Direction.E,
-  Direction.SW, Direction.S, Direction.SE,
-];
-
 const DIR_LABELS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
 
 function Range(props: {
@@ -77,7 +70,7 @@ function Range(props: {
 }) {
   const fmt = props.format ?? String;
   return (
-    <label class="field">
+    <label class="field stacked">
       <span>{props.label}</span>
       <input
         type="range"
@@ -99,6 +92,94 @@ function common<T>(values: T[]): T | null {
   return values.every((v) => v === values[0]) ? values[0]! : null;
 }
 
+const DEAD_ZONE = 10; // px from the centre before a drag picks a direction
+
+/**
+ * One button showing the fan's facing. Press and hold, then drag toward a direction:
+ * it snaps to the nearest of 8 and updates live. A drag is one undo step (edits merge).
+ * `dir` is null when a bulk selection disagrees.
+ */
+function DirectionDial({ dir, onChange }: { dir: Direction | null; onChange: (d: Direction) => void }) {
+  const pick = (e: PointerEvent) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const dx = e.clientX - (r.left + r.width / 2);
+    const dy = e.clientY - (r.top + r.height / 2);
+    if (Math.hypot(dx, dy) < DEAD_ZONE) return;
+    const d = ((Math.round((Math.atan2(dx, -dy) * 4) / Math.PI) % 8) + 8) % 8;
+    if (d !== dir) onChange(d as Direction);
+  };
+  const turn = (step: number) => onChange((((dir ?? 0) + step + 8) % 8) as Direction);
+  return (
+    <button
+      class="dial"
+      aria-label={`Direction: ${dir === null ? "mixed" : DIR_LABELS[dir]}. Hold and drag to change.`}
+      title="Hold and drag toward a direction"
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        pick(e);
+      }}
+      onPointerMove={(e) => {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) pick(e);
+      }}
+      onPointerUp={(e) => {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        e.currentTarget.blur();
+      }}
+      onKeyDown={(e) => {
+        const step = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
+        if (step === 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        turn(step);
+      }}
+    >
+      <svg viewBox="-20 -20 40 40" width="56" height="56" aria-hidden="true">
+        {DIR_LABELS.map((_, d) => (
+          <line
+            key={d}
+            x1="0" y1="-16" x2="0" y2={d % 2 === 0 ? "-12.5" : "-14"}
+            transform={`rotate(${d * 45})`}
+            stroke="currentColor" stroke-width="1.5" opacity="0.5"
+          />
+        ))}
+        {dir !== null && (
+          <path d="M-3 9 V-1 H-7 L0 -10 L7 -1 H3 V9 Z" transform={`rotate(${dir * 45})`} fill="currentColor" />
+        )}
+        {dir === null && <text y="4" text-anchor="middle" font-size="12" fill="currentColor">—</text>}
+      </svg>
+    </button>
+  );
+}
+
+/** Section title with its power / open switch at the right. */
+function SectionHead(props: {
+  title: string;
+  switchLabel: string;
+  onText?: string;
+  offText?: string;
+  value: boolean | null;
+  onChange: (v: boolean) => void;
+}) {
+  const { value } = props;
+  return (
+    <div class="section-head">
+      <h2>{props.title}</h2>
+      <label class="head-switch" title={props.switchLabel}>
+        <span>{value === null ? "—" : value ? props.onText ?? "On" : props.offText ?? "Off"}</span>
+        <input
+          type="checkbox"
+          class="switch"
+          role="switch"
+          aria-label={props.switchLabel}
+          checked={value === true}
+          indeterminate={value === null}
+          onChange={(e) => props.onChange(e.currentTarget.checked)}
+        />
+      </label>
+    </div>
+  );
+}
+
 function FanControls({ ids }: { ids: number[] }) {
   const fans = ids.map((i) => layout.fans.get(i)!);
   const dir = common(fans.map((f) => f.dir));
@@ -107,71 +188,50 @@ function FanControls({ ids }: { ids: number[] }) {
   const osc = common(fans.map((f) => f.oscillate));
   const sweep = common(fans.map((f) => f.sweepSpeed));
   return (
-    <>
-      <h2>{ids.length > 1 ? `Fans (${ids.length})` : "Fan"}</h2>
-      <div class="field stack">
-        <span>Direction</span>
-        <div class="dirpad" role="radiogroup" aria-label="Direction">
-          {PAD.map((d) =>
-            d === null ? (
-              <span key="c" class="dirpad-center" />
-            ) : (
-              <button
-                key={d}
-                class={dir === d ? "active" : ""}
-                role="radio"
-                aria-checked={dir === d}
-                aria-label={DIR_LABELS[d]}
-                title={DIR_LABELS[d]}
-                onClick={() => updateFans(ids, { dir: d })}
-              >
-                <svg viewBox="-10 -10 20 20" width="20" height="20">
-                  <path d="M-3 8 V-1 H-7 L0 -9 L7 -1 H3 V8 Z" transform={`rotate(${d * 45})`} fill="currentColor" />
-                </svg>
-              </button>
-            ),
-          )}
+    <section class="controls">
+      <SectionHead
+        title={ids.length > 1 ? `Fans (${ids.length})` : "Fan"}
+        switchLabel="Power"
+        value={on}
+        onChange={(v) => updateFans(ids, { on: v })}
+      />
+      <div class="aim">
+        <div class="stack-label">
+          <span>Direction</span>
+          <DirectionDial dir={dir} onChange={(d) => updateFans(ids, { dir: d })} />
         </div>
+        <Range
+          label="Level"
+          range={FAN_LEVEL_RANGE}
+          value={level ?? fans[0]!.level}
+          mixed={level === null}
+          disabled={on === false}
+          onChange={(v) => updateFans(ids, { level: v })}
+        />
       </div>
-      <label class="field">
-        <span>Power</span>
-        <input
-          type="checkbox"
-          class="switch"
-          role="switch"
-          checked={on === true}
-          indeterminate={on === null}
-          onChange={(e) => updateFans(ids, { on: e.currentTarget.checked })}
+      <div class="subgroup">
+        <label class="field">
+          <span>Oscillate</span>
+          <input
+            type="checkbox"
+            class="switch"
+            role="switch"
+            checked={osc === true}
+            indeterminate={osc === null}
+            onChange={(e) => updateFans(ids, { oscillate: e.currentTarget.checked })}
+          />
+          <output>{osc === null ? "—" : osc ? "On" : "Off"}</output>
+        </label>
+        <Range
+          label="Sweep speed"
+          range={SWEEP_SPEED_RANGE}
+          value={sweep ?? fans[0]!.sweepSpeed}
+          mixed={sweep === null}
+          disabled={osc === false}
+          onChange={(v) => updateFans(ids, { sweepSpeed: v })}
         />
-        <output>{on === null ? "—" : on ? "On" : "Off"}</output>
-      </label>
-      <Range
-        label="Level"
-        range={FAN_LEVEL_RANGE}
-        value={level ?? fans[0]!.level}
-        mixed={level === null}
-        disabled={on === false}
-        onChange={(v) => updateFans(ids, { level: v })}
-      />
-      <label class="field">
-        <span>Oscillate</span>
-        <input
-          type="checkbox"
-          checked={osc === true}
-          indeterminate={osc === null}
-          onChange={(e) => updateFans(ids, { oscillate: e.currentTarget.checked })}
-        />
-        <output>{osc === null ? "—" : ""}</output>
-      </label>
-      <Range
-        label="Sweep speed"
-        range={SWEEP_SPEED_RANGE}
-        value={sweep ?? fans[0]!.sweepSpeed}
-        mixed={sweep === null}
-        disabled={osc === false}
-        onChange={(v) => updateFans(ids, { sweepSpeed: v })}
-      />
-    </>
+      </div>
+    </section>
   );
 }
 
@@ -181,20 +241,13 @@ function HeaterControls({ ids }: { ids: number[] }) {
   const rate = common(hs.map((h) => h.outputRate));
   const on = common(hs.map((h) => h.on));
   return (
-    <>
-      <h2>{ids.length > 1 ? `Heaters (${ids.length})` : "Heater"}</h2>
-      <label class="field">
-        <span>Power</span>
-        <input
-          type="checkbox"
-          class="switch"
-          role="switch"
-          checked={on === true}
-          indeterminate={on === null}
-          onChange={(e) => updateHeaters(ids, { on: e.currentTarget.checked })}
-        />
-        <output>{on === null ? "—" : on ? "On" : "Off"}</output>
-      </label>
+    <section class="controls">
+      <SectionHead
+        title={ids.length > 1 ? `Heaters (${ids.length})` : "Heater"}
+        switchLabel="Power"
+        value={on}
+        onChange={(v) => updateHeaters(ids, { on: v })}
+      />
       <Range
         label="Target"
         range={HEATER_TARGET_RANGE}
@@ -212,26 +265,24 @@ function HeaterControls({ ids }: { ids: number[] }) {
         disabled={on === false}
         onChange={(v) => updateHeaters(ids, { outputRate: v })}
       />
-    </>
+    </section>
   );
 }
 
 function WindowControls({ ids }: { ids: number[] }) {
   const open = common(ids.map((i) => layout.windows.get(i)!.open));
   return (
-    <>
-      <h2>{ids.length > 1 ? `Windows (${ids.length})` : "Window"}</h2>
-      <label class="field">
-        <span>Open</span>
-        <input
-          type="checkbox"
-          checked={open === true}
-          indeterminate={open === null}
-          onChange={(e) => updateWindows(ids, { open: e.currentTarget.checked })}
-        />
-        <output>{open === null ? "—" : ""}</output>
-      </label>
-    </>
+    <section class="controls">
+      <SectionHead
+        title={ids.length > 1 ? `Windows (${ids.length})` : "Window"}
+        switchLabel="Open"
+        onText="Open"
+        offText="Closed"
+        value={open}
+        onChange={(v) => updateWindows(ids, { open: v })}
+      />
+      <p class="hint">{open === null ? "Mixed." : open ? "Open: air and heat pass through." : "Closed: blocks air, leaks heat faster than a wall."}</p>
+    </section>
   );
 }
 

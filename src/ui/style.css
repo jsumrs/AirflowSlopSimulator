@@ -90,12 +90,22 @@ body,
   margin-left: -2px;
 }
 
+/* Every button is as tall as the play/step icon buttons: 18px icon + padding + border. */
+:root {
+  --btn-h: calc(18px + 0.6rem + 4px);
+}
+
 button {
   font: inherit;
   color: var(--ink);
   background: #f7f8f8;
   border: 2px solid var(--edge);
-  padding: 0.3rem 0.65rem;
+  box-sizing: border-box;
+  height: var(--btn-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.65rem;
   cursor: pointer;
   text-transform: inherit;
   letter-spacing: inherit;
@@ -197,27 +207,6 @@ input[type="range"] {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.dirpad {
-  display: grid;
-  grid-template-columns: repeat(3, 40px);
-  grid-auto-rows: 40px;
-  gap: 2px;
-  background: var(--edge);
-  border: 2px solid var(--edge);
-  width: max-content;
-}
-
-.dirpad button {
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-}
-
-.dirpad-center {
-  background: var(--edge-soft);
-}
-
 .unsupported {
   max-width: 32rem;
   margin: 20vh auto 0;
@@ -287,6 +276,17 @@ button:disabled {
   flex: 1;
 }
 
+.legend-float {
+  position: absolute;
+  right: 0.6rem;
+  bottom: 0.6rem;
+  padding: 0.3rem 0.5rem;
+  background: rgba(255, 255, 255, 0.85);
+  border: 2px solid var(--edge);
+  pointer-events: none;
+}
+
+.legend {
 /* Sim bar: playback, heat map toggles, legend */
 .simbar {
   display: flex;
@@ -317,17 +317,6 @@ button:disabled {
   gap: 0.35rem;
 }
 
-.legend-float {
-  position: absolute;
-  right: 0.6rem;
-  bottom: 0.6rem;
-  padding: 0.3rem 0.5rem;
-  background: rgba(255, 255, 255, 0.85);
-  border: 2px solid var(--edge);
-  pointer-events: none;
-}
-
-.legend {
   width: 260px;
 }
 
@@ -388,15 +377,6 @@ select {
   font: 600 13px var(--mono);
 }
 
-.simbar .swirl input[type="range"] {
-  width: 110px;
-}
-
-.simbar output {
-  font: 600 12px var(--mono);
-  min-width: 2.5em;
-}
-
 /* Hover inspector: top-left of the canvas, never blocks the pointer */
 .inspector {
   position: absolute;
@@ -408,6 +388,15 @@ select {
   font: 600 12px var(--mono);
   line-height: 1.5;
   pointer-events: none;
+.simbar .swirl input[type="range"] {
+  width: 110px;
+}
+
+.simbar output {
+  font: 600 12px var(--mono);
+  min-width: 2.5em;
+}
+
 }
 
 .inspector-head {
@@ -422,6 +411,17 @@ select {
   color: var(--muted);
 }
 
+/* Bulk edit */
+.panel .count {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+.panel .mixed {
+  color: #6b7280;
+}
+
+/* File menu */
+.menu {
 .simbar .label {
   margin-right: 0.4rem;
   color: var(--muted);
@@ -436,17 +436,6 @@ select {
   min-width: 2.4rem;
 }
 
-/* Bulk edit */
-.panel .count {
-  margin: 0 0 0.5rem;
-  font-weight: 600;
-}
-.panel .mixed {
-  color: #6b7280;
-}
-
-/* File menu */
-.menu {
   position: relative;
 }
 .menu-list {
@@ -464,6 +453,7 @@ select {
 }
 .menu-list button {
   border: 0;
+  justify-content: flex-start;
   text-align: left;
   background: transparent;
 }
@@ -501,3 +491,95 @@ select {
 .menu-list button.danger:hover {
   background: #ffd0cc;
 }
+
+/* Fan direction dial: hold and drag */
+button.dial {
+  height: auto;
+  padding: 0.3rem;
+  align-self: flex-start; /* don't stretch to the panel width */
+  width: max-content;
+  line-height: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+button.dial:active {
+  cursor: grabbing;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Side panel sections */
+.controls {
+  margin-top: 1rem;
+  padding-top: 0.2rem;
+}
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 2px solid var(--edge);
+}
+.section-head h2 {
+  margin: 0;
+  border: 0;
+  padding: 0.1rem 0 0.35rem;
+}
+.head-switch {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font: 600 11px var(--mono);
+  text-transform: uppercase;
+  align-self: center;
+  padding-bottom: 0.3rem;
+}
+
+/* Label above a full-width slider, value at the right */
+.field.stacked {
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 0.25rem;
+}
+.field.stacked > input[type="range"] {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.field.stacked > output {
+  grid-row: 1;
+  grid-column: 2;
+}
+
+/* Dial beside the level slider */
+.aim {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: start;
+  margin-bottom: 0.9rem;
+}
+.aim .field {
+  margin: 0;
+  padding-top: 0.1rem;
+}
+.stack-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.stack-label > span {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Related settings boxed together */
+.subgroup {
+  padding: 0.6rem 0.6rem 0.1rem;
+  border: 2px solid var(--edge-soft, var(--edge));
+}
+
