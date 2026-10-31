@@ -71,6 +71,21 @@ describe("save format", () => {
     expect(snap.settings.simQuality).toBe(DEFAULT_SETTINGS.simQuality);
   });
 
+  it("upgrades v1 files: heaters come in switched on", () => {
+    const snap = parseSave(
+      JSON.stringify({ version: 1, grid: { width: 3, height: 3 }, tiles: [{ x: 0, y: 0, type: "heater", targetC: 60 }] }),
+    );
+    expect(snap.layout.heaters[0]![1]).toMatchObject({ on: true, targetC: 60 });
+  });
+
+  it("round-trips a switched-off heater", () => {
+    const l = new Layout([3, 3]);
+    l.setTile(4, TileType.Heater);
+    l.updateHeater(4, { on: false });
+    const back = parseSave(toJson({ layout: l.snapshot(), settings: DEFAULT_SETTINGS }));
+    expect(back.layout.heaters[0]![1].on).toBe(false);
+  });
+
   it("rejects bad files with readable errors", () => {
     const bad = (v: unknown) => () => parseSave(typeof v === "string" ? v : JSON.stringify(v));
     expect(bad("not json")).toThrow(SaveFormatError);

@@ -41,7 +41,7 @@ export function tileProps(layout: Layout, i: number, out: Float32Array, o: numbe
       const h = layout.heaters.get(i);
       if (h) {
         target = h.targetC;
-        rate = h.outputRate;
+        rate = h.on ? h.outputRate : 0;
       }
       break;
     }

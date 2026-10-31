@@ -1,4 +1,4 @@
-export const CURRENT_VERSION = 1;
+export const CURRENT_VERSION = 2;
 
 export class SaveFormatError extends Error {
   override name = "SaveFormatError";
@@ -10,7 +10,19 @@ type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
  * `MIGRATIONS[n]` upgrades a version-n file to version n+1.
  * Any change to the save format bumps CURRENT_VERSION and adds an entry here.
  */
-const MIGRATIONS: Record<number, Migration> = {};
+const MIGRATIONS: Record<number, Migration> = {
+  // v2: heaters gained a power switch. Existing heaters were always on.
+  1: (raw) => ({
+    ...raw,
+    tiles: Array.isArray(raw.tiles)
+      ? raw.tiles.map((t: unknown) =>
+          typeof t === "object" && t !== null && (t as { type?: unknown }).type === "heater"
+            ? { on: true, ...t }
+            : t,
+        )
+      : raw.tiles,
+  }),
+};
 
 export function migrate(
   raw: unknown,

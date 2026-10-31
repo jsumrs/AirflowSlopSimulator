@@ -5,7 +5,7 @@ import { TileType } from "../model/tiles";
  * Packs one tile into 4 bytes (RGBA8UI texel) for the tile shader.
  *   r: tile type
  *   Fan:    g = dir | oscillate << 3 | sweepSpeed << 4 | on << 7, b = level
- *   Heater: g = output rate, b = target C
+ *   Heater: g = output rate | on << 7, b = target C
  *   Window: g = open (0/1)
  */
 export function packTile(layout: Layout, i: number, out: Uint8Array, o: number): void {
@@ -23,7 +23,7 @@ export function packTile(layout: Layout, i: number, out: Uint8Array, o: number):
   } else if (type === TileType.Heater) {
     const h = layout.heaters.get(i);
     if (h) {
-      out[o + 1] = h.outputRate;
+      out[o + 1] = h.outputRate | (h.on ? 128 : 0);
       out[o + 2] = h.targetC;
     }
   } else if (type === TileType.Window) {

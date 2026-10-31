@@ -52,6 +52,8 @@ export interface FanSettings {
 }
 
 export interface HeaterSettings {
+  /** Power switch. Target and rate are kept while off. */
+  on: boolean;
   /** Target temperature in C. */
   targetC: number;
   /** 1-5. */
@@ -75,6 +77,7 @@ export const DEFAULT_FAN: Readonly<FanSettings> = {
   sweepSpeed: 2,
 };
 export const DEFAULT_HEATER: Readonly<HeaterSettings> = {
+  on: true,
   targetC: 50,
   outputRate: 3,
 };
@@ -97,6 +100,7 @@ export function sanitizeFan(p: Partial<FanSettings>): Partial<FanSettings> {
 
 export function sanitizeHeater(p: Partial<HeaterSettings>): Partial<HeaterSettings> {
   const out: Partial<HeaterSettings> = {};
+  if (p.on !== undefined) out.on = !!p.on;
   if (p.targetC !== undefined) out.targetC = clampInt(p.targetC, HEATER_TARGET_RANGE);
   if (p.outputRate !== undefined) out.outputRate = clampInt(p.outputRate, HEATER_RATE_RANGE);
   return out;

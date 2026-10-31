@@ -168,14 +168,16 @@ vec4 fanGlyph(uvec4 d, vec2 f, float aa, vec3 under) {
 // the output rate (once tiles are big enough), and a slow glow while below target.
 vec4 heaterGlyph(uvec4 d, ivec2 ti, vec2 f, float aa) {
   float target = float(d.b);
+  bool on = d.g >= 128u;
   vec3 col = heatColor(target);
+  if (!on) col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), 0.75);
   float tileTemp = texelFetch(uTileAvg, ti, 0).r;
-  if (d.g > 0u && tileTemp < target - 0.5) {
+  if (on && tileTemp < target - 0.5) {
     float pulse = 0.5 + 0.5 * sin(TAU * uSimTime);
     col = mix(col, HEAT_GLOW, 0.35 * pulse);
   }
   if (uScale >= 10.0 * uDpr) {
-    float lines = float(d.g);
+    float lines = float(d.g & 7u);
     float th = max(0.04, aa);
     for (int i = 0; i < 5; i++) {
       if (float(i) >= lines) break;

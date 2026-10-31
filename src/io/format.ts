@@ -139,6 +139,7 @@ export function fromRaw(file: Record<string, unknown>): SceneSnapshot {
         heaters.set(i, {
           ...DEFAULT_HEATER,
           ...sanitizeHeater({
+            ...(typeof t.on === "boolean" ? { on: t.on } : {}),
             ...(typeof t.targetC === "number" ? { targetC: t.targetC } : {}),
             ...(typeof t.outputRate === "number" ? { outputRate: t.outputRate } : {}),
           }),
