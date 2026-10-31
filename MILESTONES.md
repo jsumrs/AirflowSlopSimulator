@@ -15,12 +15,12 @@ Every milestone also needs `bunx tsc --noEmit` and `bunx vitest run` to pass.
 
 **Done when:** `bun run dev` shows a blank canvas, and `bun run build` produces static files.
 
-## [ ] 1. Grid and painting
+## [x] 1. Grid and painting
 - `model/`: generic grid shape, single tile-index helper, tile types and their settings (sections 3, 4, 12).
 - `render/`: tile fills, wall/window/fan/heater glyphs (basic versions), grid lines that can be toggled (section 4.4).
 - `input/`: Brush tool, keys 1-5 for tile type, right-drag erases (section 7.1).
 - Zoom to cursor, pan with middle-drag or Space+drag, 0/Home to fit (section 7.4).
-- Grid size controls (1-100 each, default 64 x 48, resize keeps the top-left).
+- Grid size controls (1-100 each, default 15 x 15, resize keeps the top-left).
 - Side panel showing the settings of a clicked fan, heater, or window (section 7.3).
 
 **Done when:** you can paint a walled room with a fan and heater, change their settings in the panel, and zoom and pan around it.

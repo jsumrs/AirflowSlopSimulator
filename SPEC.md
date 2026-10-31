@@ -39,7 +39,7 @@ If WebGL2 float render targets are unavailable, show a clear "unsupported browse
 
 ## 3. Grid
 
-- N x M rectangular grid. N and M are each 1–100, set in the UI. Default **64 x 48**.
+- N x M rectangular grid. N and M are each 1–100, set in the UI. Default **15 x 15**.
 - Resizing keeps the existing tiles that still fit, anchored at the top-left. New tiles are air.
 - Each tile has a light outline so the grid is visible. Outlines can be toggled and fade when zoomed out.
 - **Edges are open to the outside.** Air can flow in and out. Air entering from outside is at ambient temperature. To enclose a space, the user draws walls (with optional windows) around it.
@@ -64,7 +64,8 @@ If WebGL2 float render targets are unavailable, show a clear "unsupported browse
 
 ### 4.1 Fan
 - **Direction:** 8 directions (N, NE, E, SE, S, SW, W, NW).
-- **Level:** Off, 1, 2, 3, 4, 5. A higher level moves air faster.
+- **Power:** an on/off switch, separate from level. An off fan exerts no force, but remembers its level.
+- **Level:** 1, 2, 3, 4, 5. A higher level moves air faster. The level control is greyed out while the fan is off.
 - **Behavior:** pushes air out of its front face in the facing direction and pulls air in from behind. This is done by applying a velocity/momentum source at the fan tile. The pressure solve then produces the intake behind it naturally.
 - **Oscillate:** on/off. When on, the facing direction sweeps a fixed 90 degrees (45 degrees each side of the set direction) and back. The set direction stays the center of the sweep.
 - **Sweep speed:** adjustable while oscillating, levels 1–5.
@@ -82,7 +83,7 @@ If WebGL2 float render targets are unavailable, show a clear "unsupported browse
 ### 4.4 Showing settings on the tile
 Settings must be readable at a glance on roughly 10 px tiles, with the side panel and hover inspector giving exact values.
 
-- **Fan:** an arrow showing the current facing (it animates while oscillating). Arrow thickness or tick marks show the level (0–5). When oscillating, a faint 90 degree arc shows the sweep range. A fan that is off is drawn dimmed.
+- **Fan:** an arrow showing the current facing (it animates while oscillating). Arrow colour shows the level (green 1, yellow 3, red 5); level ticks come later. When oscillating, a faint 90 degree arc shows the sweep range. A fan that is off is drawn as a grey arrow.
 - **Heater:** the tile fill color maps to target temperature on the same scale as the heat map. A small 1–5 bar or pip strip shows output rate. A subtle pulse while it is actively heating (below target).
 - **Window:** a glass-blue tile. Closed shows a solid pane, open shows a gap or frame only.
 - **Wall:** solid neutral gray.
@@ -139,6 +140,7 @@ All overlays can be toggled on their own.
 | R | Rectangle | Drag to draw a rectangle of the active type. Draws an **outline** (hollow box, for rooms) by default. Hold Shift for **filled**. |
 | S | Select | Drag a rectangle to select. Shift+drag adds to the selection. Alt (or Ctrl)+drag subtracts from it. |
 
+- **Pointer (V / Esc):** the default tool. Click selects a tile, drag pans, nothing is painted. B toggles the brush; pressing the active brush's key (B, or its 1–5 number) again returns to the pointer.
 - **Active tile type:** keys 1–5 (Air, Wall, Fan, Heater, Window), or click in the palette.
 - Newly placed fans and heaters use the last-used settings for their type.
 
@@ -162,7 +164,8 @@ Both methods are supported:
   - O: toggle fan oscillation, or toggle window open/closed.
 
 ### 7.4 Zoom / pan
-- **Scroll:** zoom in/out, centered on the cursor. Pinch-zoom on trackpads.
+- **Scroll:** a toolbar setting. *Pan* (default, for trackpads): two-finger scroll pans. *Zoom* (for mouse wheels): scroll zooms at the cursor. Ctrl/Cmd+scroll and pinch always zoom at the cursor.
+- **Keyboard:** arrow keys pan, +/- zoom.
 - **Pan:** middle-mouse drag, or hold Space + drag. A tap of Space, with no drag, toggles play/pause instead.
 - **0 / Home:** fit the whole grid to the view.
 - Zoom range: from fit-to-window up to ~64 px per tile.
@@ -204,10 +207,10 @@ Example:
 ```json
 {
   "version": 1,
-  "grid": { "width": 64, "height": 48 },
+  "grid": { "width": 15, "height": 15 },
   "settings": { "ambientC": 20, "gravity": false, "simQuality": 2, "swirl": 0.3 },
   "tiles": [
-    { "x": 3, "y": 10, "type": "fan", "dir": "E", "level": 3, "oscillate": true, "sweepSpeed": 2 },
+    { "x": 3, "y": 10, "type": "fan", "dir": "E", "on": true, "level": 3, "oscillate": true, "sweepSpeed": 2 },
     { "x": 20, "y": 30, "type": "heater", "targetC": 50, "outputRate": 3 },
     { "x": 0, "y": 5, "type": "window", "open": false }
   ]
