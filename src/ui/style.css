@@ -158,6 +158,8 @@ input[type="range"] {
 
 /* Side panel */
 .panel {
+  display: flex;
+  flex-direction: column;
   flex: 0 0 260px;
   width: 260px;
   padding: 0.75rem;
@@ -287,36 +289,6 @@ button:disabled {
 }
 
 .legend {
-/* Sim bar: playback, heat map toggles, legend */
-.simbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 1rem;
-  padding: 0.35rem 0.6rem;
-  background: var(--panel);
-  border-top: 2px solid var(--edge);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.simbar .group {
-  display: flex;
-  align-items: center;
-}
-
-.simbar .group > button + button {
-  margin-left: -2px;
-}
-
-.simbar label {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
   width: 260px;
 }
 
@@ -388,15 +360,6 @@ select {
   font: 600 12px var(--mono);
   line-height: 1.5;
   pointer-events: none;
-.simbar .swirl input[type="range"] {
-  width: 110px;
-}
-
-.simbar output {
-  font: 600 12px var(--mono);
-  min-width: 2.5em;
-}
-
 }
 
 .inspector-head {
@@ -422,20 +385,6 @@ select {
 
 /* File menu */
 .menu {
-.simbar .label {
-  margin-right: 0.4rem;
-  color: var(--muted);
-}
-
-.simbar .group > .label + button {
-  margin-left: 0;
-}
-
-.simbar .group button {
-  padding: 0.3rem 0.5rem;
-  min-width: 2.4rem;
-}
-
   position: relative;
 }
 .menu-list {
@@ -490,6 +439,17 @@ select {
 }
 .menu-list button.danger:hover {
   background: #ffd0cc;
+}
+
+/* Playback controls, pushed to the right of the top toolbar */
+.toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  margin-left: auto;
+}
+.toolbar-end .group > button + button {
+  margin-left: -2px;
 }
 
 /* Fan direction dial: hold and drag */
@@ -583,3 +543,52 @@ button.dial:active {
   border: 2px solid var(--edge-soft, var(--edge));
 }
 
+/* Display and simulation settings live at the bottom of the panel */
+.sim-settings {
+  margin-top: auto;
+  padding-top: 0.5rem;
+}
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.toggle-row.indent {
+  padding-left: 1rem;
+}
+.field.stack-row {
+  grid-template-columns: 1fr auto;
+}
+
+/* Speed: collapsed to the current value, options slide out leftward over the toolbar */
+.speed {
+  position: relative;
+  min-width: 3.6rem;
+}
+.speed > button {
+  width: 100%;
+}
+.speed-options {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  background: var(--panel);
+  box-shadow: 3px 3px 0 var(--edge);
+  animation: speed-open 0.12s ease-out;
+  transform-origin: right center;
+}
+.speed-options button + button {
+  margin-left: -2px;
+}
+@keyframes speed-open {
+  from { transform: scaleX(0.4); opacity: 0; }
+  to { transform: scaleX(1); opacity: 1; }
+}

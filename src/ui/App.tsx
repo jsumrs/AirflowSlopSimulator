@@ -11,7 +11,7 @@ import { clampView, fitView } from "../render/view";
 import { GlSolver } from "../sim/glSolver";
 import { MAX_STEPS_PER_FRAME, SIM_DT } from "../sim/params";
 import { Inspector } from "./Inspector";
-import { LegendRow, SimBar } from "./SimBar";
+import { LegendRow } from "./Legend";
 import { SidePanel } from "./SidePanel";
 import { Toolbar } from "./Toolbar";
 import {
@@ -388,7 +388,6 @@ export function App() {
             <Inspector />
             <LegendRow />
           </div>
-          <SimBar />
         </div>
         <SidePanel />
       </div>

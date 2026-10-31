@@ -7,6 +7,7 @@ import {
   TileType,
 } from "../model/tiles";
 import { tileCoords } from "../model/grid";
+import { SimSettings } from "./SimSettings";
 import { formatAirflow, formatTemp, tileReading } from "./readings";
 import {
   layout,
@@ -286,7 +287,7 @@ function WindowControls({ ids }: { ids: number[] }) {
   );
 }
 
-export function SidePanel() {
+function SelectionPanel() {
   layoutRev.value; // re-render on any layout change
   const sel = selection.value;
   const i = selected.value;
@@ -299,7 +300,7 @@ export function SidePanel() {
     const heaters = of(TileType.Heater);
     const windows = of(TileType.Window);
     return (
-      <aside class="panel">
+      <div class="selection">
         <p class="count">{sel.size} tiles selected</p>
         {fans.length > 0 && <FanControls ids={fans} />}
         {heaters.length > 0 && <HeaterControls ids={heaters} />}
@@ -307,7 +308,7 @@ export function SidePanel() {
         {fans.length + heaters.length + windows.length === 0 && (
           <p class="hint">No fans, heaters, or windows in this selection.</p>
         )}
-      </aside>
+      </div>
     );
   }
 
@@ -326,9 +327,18 @@ export function SidePanel() {
   }
 
   return (
-    <aside class="panel">
+    <div class="selection">
       {i !== null && <TileStats i={i} />}
       {body}
+    </div>
+  );
+}
+
+export function SidePanel() {
+  return (
+    <aside class="panel">
+      <SelectionPanel />
+      <SimSettings />
     </aside>
   );
 }

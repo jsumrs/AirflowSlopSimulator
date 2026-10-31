@@ -3,6 +3,7 @@ import { TileType } from "../model/tiles";
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { EXAMPLES } from "../examples";
+import { Playback } from "./Playback";
 import { downloadText } from "./fileIO";
 import { keepFocus } from "./focus";
 import {
@@ -268,6 +269,9 @@ export function Toolbar() {
             <kbd>{p.key}</kbd> {p.label}
           </button>
         ))}
+      </div>
+      <div class="toolbar-end">
+        <Playback />
       </div>
     </div>
   );
