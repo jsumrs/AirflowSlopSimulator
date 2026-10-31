@@ -371,6 +371,11 @@ export class CpuSim {
     return this.curl[this.idx(cx, cy)]!;
   }
 
+  /** Cell on the outermost ring of the grid. */
+  private onEdge(x: number, y: number): boolean {
+    return x === 0 || y === 0 || x === this.w - 1 || y === this.h - 1;
+  }
+
   /** vorticity.frag: confinement force pushes along N x w. */
   vorticity(dt: number): void {
     const half = this.q * 0.5;
@@ -380,7 +385,7 @@ export class CpuSim {
         const i = this.idx(x, y);
         let u = this.vel[i * 2]!;
         let v = this.vel[i * 2 + 1]!;
-        if (!this.solid(x, y)) {
+        if (!this.solid(x, y) && !this.onEdge(x, y)) {
           const gx = (Math.abs(this.curlAtClamped(x + 1, y)) - Math.abs(this.curlAtClamped(x - 1, y))) * half;
           const gy = (Math.abs(this.curlAtClamped(x, y + 1)) - Math.abs(this.curlAtClamped(x, y - 1))) * half;
           const len = Math.hypot(gx, gy) + 1e-5;

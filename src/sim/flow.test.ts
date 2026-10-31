@@ -199,4 +199,14 @@ describe("CPU flow reference", () => {
     };
     expect(spin(1)).toBeGreaterThan(spin(0));
   });
+
+  it("swirl does not make air at the open grid edge run away", () => {
+    // Regression: confinement used one-sided curl at the border and fed on itself,
+    // taking edge cells from ~7 tiles/s to 20+ with a single fan and nothing else.
+    const { cpu, seconds } = sim([12, 8], 2, (l) => fan(l, 3, 4, Direction.E, 3), { swirl: 0.3 });
+    seconds(35);
+    let max = 0;
+    for (let i = 0; i < cpu.vel.length; i += 2) max = Math.max(max, Math.hypot(cpu.vel[i]!, cpu.vel[i + 1]!));
+    expect(max).toBeLessThan(1.5 * 3 * 2.5);
+  }, 60000);
 });

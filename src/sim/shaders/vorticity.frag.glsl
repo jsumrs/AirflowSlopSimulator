@@ -18,7 +18,7 @@ float curlAt(ivec2 c) { return texelFetch(uCurl, clampCell(c), 0).r; }
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
   vec2 v = texelFetch(uVel, c, 0).xy;
-  if (!solidAt(c)) {
+  if (!solidAt(c) && !onEdge(c)) {
     float half_q = 0.5 * float(uQuality);
     float gx = (abs(curlAt(c + ivec2(1, 0))) - abs(curlAt(c - ivec2(1, 0)))) * half_q;
     float gy = (abs(curlAt(c + ivec2(0, 1))) - abs(curlAt(c - ivec2(0, 1)))) * half_q;

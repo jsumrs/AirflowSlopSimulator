@@ -103,7 +103,7 @@ Per step:
 1. **Sources:** fan momentum, heater heat (thermostat rule), buoyancy force if gravity is on.
 2. **Advect** velocity and temperature (semi-Lagrangian).
 3. **Diffuse** temperature (with per-tile conductivity: air, wall, closed window). No explicit velocity viscosity: the semi-Lagrangian solver already blurs the flow more than real air would.
-4. **Vorticity confinement:** detects small swirls and gently strengthens them, to make up for the solver's numerical blurring. Its strength is the **Swirl** setting (slider). The default is tuned by eye against the example layouts.
+4. **Vorticity confinement:** detects small swirls and gently strengthens them, to make up for the solver's numerical blurring. Its strength is the **Swirl** setting (slider). It is not applied to the outermost ring of cells: the curl there is one-sided, and confinement at the open edges fed on itself and made edge air speed grow without bound. The default is tuned by eye against the example layouts.
 5. **Project:** pressure solve (Jacobi iterations, ~20–40) to make the velocity divergence-free.
 6. **Boundaries:**
    - Walls and closed windows: no flow through them (solid cells).

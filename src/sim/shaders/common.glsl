@@ -11,3 +11,4 @@ ivec2 clampCell(ivec2 c) { return clamp(c, ivec2(0), uSim - 1); }
 vec4 propsA(ivec2 c) { return texelFetch(uPropsA, c / uQuality, 0); }
 vec4 propsB(ivec2 c) { return texelFetch(uPropsB, c / uQuality, 0); }
 bool solidAt(ivec2 c) { return propsA(c).g > 0.5; }
+bool onEdge(ivec2 c) { return c.x == 0 || c.y == 0 || c.x == uSim.x - 1 || c.y == uSim.y - 1; }
