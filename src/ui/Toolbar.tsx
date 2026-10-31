@@ -1,14 +1,24 @@
 import { MAX_DIM, MIN_DIM } from "../model/grid";
 import { TileType } from "../model/tiles";
+import { useRef } from "preact/hooks";
+import { downloadText } from "./fileIO";
 import {
   activeType,
+  canRedo,
+  canUndo,
+  clearLayout,
+  exportJson,
   fit,
   gridShape,
-  requestRender,
+  importJson,
+  notice,
+  redo,
   resizeGrid,
   scrollMode,
-  showGrid,
+  setGridLines,
+  settings,
   tool,
+  undo,
 } from "./store";
 
 const PALETTE: { type: TileType; key: string; label: string }[] = [
@@ -44,8 +54,55 @@ function DimInput({ axis }: { axis: 0 | 1 }) {
 }
 
 export function Toolbar() {
+  const fileInput = useRef<HTMLInputElement>(null);
   return (
     <div class="toolbar">
+      <div class="group">
+        <button title="Undo (Ctrl+Z)" disabled={!canUndo()} onMouseDown={keepFocus} onClick={undo}>
+          Undo
+        </button>
+        <button
+          title="Redo (Ctrl+Shift+Z / Ctrl+Y)"
+          disabled={!canRedo()}
+          onMouseDown={keepFocus}
+          onClick={redo}
+        >
+          Redo
+        </button>
+      </div>
+      <div class="group">
+        <button
+          title="Download the layout as a JSON file"
+          onMouseDown={keepFocus}
+          onClick={() => downloadText("airflow-layout.json", exportJson())}
+        >
+          Export
+        </button>
+        <button
+          title="Load a layout from a JSON file"
+          onMouseDown={keepFocus}
+          onClick={() => fileInput.current?.click()}
+        >
+          Import
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={async (e) => {
+            const input = e.currentTarget;
+            const file = input.files?.[0];
+            input.value = ""; // allow re-importing the same file
+            if (!file) return;
+            try {
+              importJson(await file.text());
+            } catch {
+              notice.value = "Could not read that file.";
+            }
+          }}
+        />
+      </div>
       <div class="group">
         <button
           class={tool.value === "pointer" ? "active" : ""}
@@ -81,10 +138,9 @@ export function Toolbar() {
         <label>
           <input
             type="checkbox"
-            checked={showGrid.value}
+            checked={settings.value.overlays.gridLines}
             onChange={(e) => {
-              showGrid.value = e.currentTarget.checked;
-              requestRender();
+              setGridLines(e.currentTarget.checked);
               e.currentTarget.blur();
             }}
           />{" "}
@@ -109,6 +165,9 @@ export function Toolbar() {
             Zoom
           </button>
         </span>
+        <button title="Clear every tile back to air (can be undone)" onMouseDown={keepFocus} onClick={clearLayout}>
+          Clear grid
+        </button>
         <button title="Fit to view (0 / Home)" onMouseDown={keepFocus} onClick={fit}>
           Fit
         </button>

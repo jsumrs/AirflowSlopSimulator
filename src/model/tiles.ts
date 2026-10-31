@@ -26,6 +26,8 @@ export enum Direction {
   NW = 7,
 }
 
+export const DIR_NAMES: readonly string[] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+
 /** Direction vectors in grid coordinates (y grows downward on screen). */
 export const DIR_VECTORS: readonly (readonly [number, number])[] = [
   [0, -1],

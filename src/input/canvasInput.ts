@@ -16,6 +16,11 @@ export interface InputHost {
   setTool(tool: Tool): void;
   /** Paint one tile. Out-of-bounds coords are the host's to ignore. */
   paint(x: number, y: number, type: TileType): void;
+  /** A brush stroke begins/ends; the host groups its paints into one undo step. */
+  beginStroke(): void;
+  endStroke(): void;
+  undo(): void;
+  redo(): void;
   /** Click without drag. */
   select(x: number, y: number): void;
   /** Hovered tile, or (-1, -1). */
@@ -26,12 +31,19 @@ export interface InputHost {
   requestRender(): void;
 }
 
-/** Only fields that take typed text or arrow keys swallow hotkeys. Buttons and checkboxes don't. */
-function isTypingTarget(t: EventTarget | null): boolean {
+/**
+ * Text fields and dropdowns swallow keys. A focused slider keeps only its arrow keys.
+ * Buttons and checkboxes swallow nothing, so hotkeys work after clicking them.
+ */
+function ignoresKey(e: KeyboardEvent): boolean {
+  const t = e.target;
+  if (t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return true;
   if (t instanceof HTMLInputElement) {
-    return t.type !== "checkbox" && t.type !== "button";
+    if (t.type === "checkbox" || t.type === "button") return false;
+    if (t.type === "range") return e.key.startsWith("Arrow") || e.key === "Home" || e.key === "End";
+    return true;
   }
-  return t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
+  return false;
 }
 
 const DRAG_THRESHOLD = 4; // CSS px before a pointer-tool press becomes a pan
@@ -89,6 +101,7 @@ export function attachCanvasInput(canvas: HTMLCanvasElement, host: InputHost): (
       const [tx, ty] = tileAt(sx, sy);
       if (!inBounds(host.shape(), tx, ty)) return;
       mode = "paint";
+      host.beginStroke();
       paintType = e.button === 2 ? TileType.Air : host.activeType();
       startX = lastX = tx;
       startY = lastY = ty;
@@ -129,6 +142,7 @@ export function attachCanvasInput(canvas: HTMLCanvasElement, host: InputHost): (
 
   const onPointerUp = (e: PointerEvent) => {
     if (mode === "none") return;
+    if (mode === "paint") host.endStroke();
     if (mode === "paint" && !moved && button === 0) host.select(startX, startY);
     if (mode === "press") {
       if (inBounds(host.shape(), startX, startY)) host.select(startX, startY);
@@ -172,7 +186,19 @@ export function attachCanvasInput(canvas: HTMLCanvasElement, host: InputHost): (
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (isTypingTarget(e.target)) return;
+    if (ignoresKey(e)) return;
+    if (e.ctrlKey || e.metaKey) {
+      const key = e.key.toLowerCase();
+      if (key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) host.redo();
+        else host.undo();
+      } else if (key === "y") {
+        e.preventDefault();
+        host.redo();
+      }
+      return;
+    }
     if (e.code === "Space") {
       e.preventDefault();
       if (!space) {

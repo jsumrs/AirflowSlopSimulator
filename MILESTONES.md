@@ -25,7 +25,7 @@ Every milestone also needs `bunx tsc --noEmit` and `bunx vitest run` to pass.
 
 **Done when:** you can paint a walled room with a fan and heater, change their settings in the panel, and zoom and pan around it.
 
-## [ ] 2. Undo, autosave, save/load
+## [x] 2. Undo, autosave, save/load
 - `history/`: command stack. Every edit from milestone 1 goes through it (section 7.5).
 - `io/`: versioned JSON export/import, debounced autosave to `localStorage`, restore on load (section 10).
 - Unit tests for serialization round-trips.

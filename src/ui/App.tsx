@@ -10,18 +10,22 @@ import { SidePanel } from "./SidePanel";
 import { Toolbar } from "./Toolbar";
 import {
   activeType,
-  ambientC,
+  beginStroke,
   consumeRender,
+  endStroke,
   fit,
   hover,
   layout,
+  notice,
   paintTile,
+  redo,
   requestRender,
   selectTile,
   scrollMode,
   selected,
-  showGrid,
+  settings,
   tool,
+  undo,
   view,
   viewport,
 } from "./store";
@@ -74,6 +78,10 @@ export function App() {
       },
       tool: () => tool.peek(),
       setTool: (t) => (tool.value = t),
+      beginStroke,
+      endStroke,
+      undo,
+      redo,
       paint: paintTile,
       select: selectTile,
       hover: (x, y) => {
@@ -89,8 +97,7 @@ export function App() {
 
     // Redraw when UI state that affects the canvas changes.
     const stopEffect = effect(() => {
-      showGrid.value;
-      ambientC.value;
+      settings.value;
       selected.value;
       canvas.style.cursor = tool.value === "brush" ? "crosshair" : "default";
       requestRender();
@@ -101,8 +108,9 @@ export function App() {
       raf = requestAnimationFrame(frame);
       if (!consumeRender()) return;
       opts.dpr = window.devicePixelRatio || 1;
-      opts.showGrid = showGrid.peek();
-      opts.ambientC = ambientC.peek();
+      const cfg = settings.peek();
+      opts.showGrid = cfg.overlays.gridLines;
+      opts.ambientC = cfg.ambientC;
       const s = selected.peek();
       if (s === null) {
         sel[0] = sel[1] = -1;
@@ -141,6 +149,12 @@ export function App() {
   return (
     <div class="app">
       <Toolbar />
+      {notice.value && (
+        <div class="notice" role="alert">
+          <span>{notice.value}</span>
+          <button onClick={() => (notice.value = null)}>Dismiss</button>
+        </div>
+      )}
       <div class="main">
         <div class="viewport">
           <canvas ref={canvasRef} />

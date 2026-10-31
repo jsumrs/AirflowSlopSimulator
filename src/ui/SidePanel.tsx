@@ -37,6 +37,7 @@ function Range(props: {
         value={props.value}
         disabled={props.disabled}
         onInput={(e) => props.onChange(Number(e.currentTarget.value))}
+        onPointerUp={(e) => e.currentTarget.blur()}
       />
       <output>{fmt(props.value)}</output>
     </label>

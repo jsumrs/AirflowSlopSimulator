@@ -255,3 +255,23 @@ input[type="range"]:disabled {
 .field:has(input:disabled) > span {
   opacity: 0.4;
 }
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: #f7f8f8;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.4rem 0.75rem;
+  background: #ffe4b5;
+  border-bottom: 2px solid var(--edge);
+  font-weight: 600;
+}
+
+.notice span {
+  flex: 1;
+}

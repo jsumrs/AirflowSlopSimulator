@@ -12,6 +12,26 @@ import {
   sanitizeWindow,
 } from "./tiles";
 
+export interface TileSnapshot {
+  type: TileType;
+  fan?: FanSettings;
+  heater?: HeaterSettings;
+  window?: WindowSettings;
+}
+
+/** Full copy of a layout, safe to keep and restore from repeatedly. */
+export interface LayoutSnapshot {
+  shape: Shape;
+  types: Uint8Array;
+  fans: [number, FanSettings][];
+  heaters: [number, HeaterSettings][];
+  windows: [number, WindowSettings][];
+}
+
+export function sameTile(a: TileSnapshot, b: TileSnapshot): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
  * Tile grid plus per-tile settings. Pure data, no DOM or GL.
  * Changed tiles are tracked so consumers (renderer, later the solver)
@@ -85,6 +105,55 @@ export class Layout {
     Object.assign(this.lastUsed.window, s);
     this.markDirty(i);
     return true;
+  }
+
+  tileSnapshot(i: number): TileSnapshot {
+    const snap: TileSnapshot = { type: this.typeAt(i) };
+    const fan = this.fans.get(i);
+    const heater = this.heaters.get(i);
+    const window = this.windows.get(i);
+    if (fan) snap.fan = { ...fan };
+    if (heater) snap.heater = { ...heater };
+    if (window) snap.window = { ...window };
+    return snap;
+  }
+
+  /** Set one tile exactly, including its settings. Does not touch `lastUsed`. */
+  setTileSnapshot(i: number, snap: TileSnapshot): void {
+    this.fans.delete(i);
+    this.heaters.delete(i);
+    this.windows.delete(i);
+    this.types[i] = snap.type;
+    if (snap.fan) this.fans.set(i, { ...snap.fan });
+    if (snap.heater) this.heaters.set(i, { ...snap.heater });
+    if (snap.window) this.windows.set(i, { ...snap.window });
+    this.markDirty(i);
+  }
+
+  snapshot(): LayoutSnapshot {
+    const copy = <T extends object>(m: Map<number, T>): [number, T][] =>
+      Array.from(m, ([i, v]) => [i, { ...v }]);
+    return {
+      shape: [...this.shape],
+      types: this.types.slice(),
+      fans: copy(this.fans),
+      heaters: copy(this.heaters),
+      windows: copy(this.windows),
+    };
+  }
+
+  restore(snap: LayoutSnapshot): void {
+    this.shape = [...snap.shape];
+    this.types = snap.types.slice();
+    this.dirtyFlags = new Uint8Array(this.types.length);
+    this.dirtyList.length = 0;
+    this.fans.clear();
+    this.heaters.clear();
+    this.windows.clear();
+    for (const [i, v] of snap.fans) this.fans.set(i, { ...v });
+    for (const [i, v] of snap.heaters) this.heaters.set(i, { ...v });
+    for (const [i, v] of snap.windows) this.windows.set(i, { ...v });
+    this.allDirty = true;
   }
 
   /** Resize, keeping tiles that still fit anchored at the origin (top-left). */

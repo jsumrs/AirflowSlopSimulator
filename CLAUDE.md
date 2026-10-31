@@ -10,7 +10,7 @@ Early implementation. Design docs:
 
 `MILESTONES.md` is the build order. Work on one milestone at a time, check its "Done when" before calling it finished, and tick its box when it's committed.
 
-Milestone 0 (skeleton) is in place: `src/main.tsx` mounts `ui/App.tsx`, which gets the WebGL2 context through `render/gl.ts` (checks `EXT_color_buffer_float`, shows "Unsupported browser" otherwise) and clears a full-view canvas. The other `src/` folders are empty (`.gitkeep`).
+Milestones 0-2 are in place: skeleton, grid and painting (WebGL2 tile renderer with GLSL in `src/render/shaders/`, pointer and brush tools, side panel), and undo/redo plus versioned JSON save/load and autosave. All layout and settings edits go through the functions in `src/ui/store.ts`, which record `history/` commands; `model/scene.ts` bundles the layout and global settings that are saved and undone. `sim/` is still empty.
 
 ## Commands
 
