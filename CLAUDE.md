@@ -4,17 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Pre-implementation. The repo holds only design docs:
+Early implementation. Design docs:
 - `SPEC.md` is the source of truth for the Visual Airflow Simulator (browser-based, real-time 2D airflow/heat sim on an editable tile grid). Read the relevant section before implementing a feature.
 - `requirements.md` is the user's original brief. `SPEC.md` supersedes it where they differ (e.g. heaters have no direction; "replication" was renamed "output rate"; tile types are Air/Wall/Fan/Heater/Window).
 
 `MILESTONES.md` is the build order. Work on one milestone at a time, check its "Done when" before calling it finished, and tick its box when it's committed.
 
-Update this file with real commands and structure once `package.json` and `src/` exist.
+Milestone 0 (skeleton) is in place: `src/main.tsx` mounts `ui/App.tsx`, which gets the WebGL2 context through `render/gl.ts` (checks `EXT_color_buffer_float`, shows "Unsupported browser" otherwise) and clears a full-view canvas. The other `src/` folders are empty (`.gitkeep`).
 
-## Commands (planned, per SPEC.md section 2)
+## Commands
 
-Bun is the package manager only. Vite builds and serves; Vitest runs tests.
+Bun is the package manager only. Vite builds and serves; Vitest runs tests. Config lives in `vite.config.ts` (Vitest shares it; `passWithNoTests` is on until real tests exist).
 
 ```sh
 bun install

@@ -8,7 +8,7 @@ Every milestone also needs `bunx tsc --noEmit` and `bunx vitest run` to pass.
 
 ---
 
-## [ ] 0. Project skeleton
+## [x] 0. Project skeleton
 - Vite + Preact + TypeScript (strict) + Vitest, installed with Bun (section 2).
 - Empty `src/` folders from section 12.
 - WebGL2 canvas filling the view. Check for `EXT_color_buffer_float` and show an "unsupported browser" message if it's missing.
