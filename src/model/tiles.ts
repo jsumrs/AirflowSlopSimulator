@@ -111,3 +111,8 @@ export function sanitizeWindow(p: Partial<WindowSettings>): Partial<WindowSettin
   if (p.open !== undefined) out.open = !!p.open;
   return out;
 }
+
+/** Direction after rotating the tiles 90 degrees clockwise or counter-clockwise. */
+export function rotateDir(d: Direction, clockwise: boolean): Direction {
+  return ((d + (clockwise ? 2 : 6)) % 8) as Direction;
+}

@@ -105,6 +105,15 @@ export class Layout {
     return true;
   }
 
+  /** A fresh tile of `type` with the last-used settings, as `setTile` would create it. */
+  newTileSnapshot(type: TileType): TileSnapshot {
+    const snap: TileSnapshot = { type };
+    if (type === TileType.Fan) snap.fan = { ...this.lastUsed.fan };
+    else if (type === TileType.Heater) snap.heater = { ...this.lastUsed.heater };
+    else if (type === TileType.Window) snap.window = { ...this.lastUsed.window };
+    return snap;
+  }
+
   tileSnapshot(i: number): TileSnapshot {
     const snap: TileSnapshot = { type: this.typeAt(i) };
     const fan = this.fans.get(i);

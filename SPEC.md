@@ -164,7 +164,7 @@ Both methods are supported:
   - O: toggle fan oscillation, or toggle window open/closed.
 
 ### 7.4 Zoom / pan
-- **Scroll:** a toolbar setting. *Pan* (default, for trackpads): two-finger scroll pans. *Zoom* (for mouse wheels): scroll zooms at the cursor. Ctrl/Cmd+scroll and pinch always zoom at the cursor.
+- **Scroll:** always zooms at the cursor (so does pinch). There is no scroll-to-pan; panning is drag with the pointer tool, Space + drag, or middle-drag.
 - **Keyboard:** arrow keys pan, +/- zoom.
 - **Pan:** middle-mouse drag, or hold Space + drag. A tap of Space, with no drag, toggles play/pause instead.
 - **0 / Home:** fit the whole grid to the view.

@@ -5,17 +5,40 @@ import { sameShape, tileCoords, tileIndex } from "../model/grid";
 import { TileType } from "../model/tiles";
 import { type FlowInputs, Particles, Streamlines } from "../render/flowOverlays";
 import { createGlContext, resizeToDisplay } from "../render/gl";
+import { SelectionOverlay } from "../render/selectionOverlay";
 import { type DrawOptions, LAYER_BASE, LAYER_GLYPHS, TileRenderer } from "../render/tileRenderer";
 import { clampView, fitView } from "../render/view";
 import { GlSolver } from "../sim/glSolver";
 import { MAX_STEPS_PER_FRAME, SIM_DT } from "../sim/params";
 import { Inspector } from "./Inspector";
-import { SimBar } from "./SimBar";
+import { LegendRow, SimBar } from "./SimBar";
 import { SidePanel } from "./SidePanel";
 import { Toolbar } from "./Toolbar";
 import {
   activeType,
+  adjustTargets,
+  beginMove,
   beginStroke,
+  cancelPaste,
+  commitMarquee,
+  copySelection,
+  cutSelection,
+  endMove,
+  floating,
+  gesture,
+  hasObjectTarget,
+  hasSelection,
+  inSelection,
+  isPasting,
+  moveBy,
+  placePaste,
+  rotateAction,
+  selection,
+  setSelection,
+  startPaste,
+  toggleTargets,
+  transform,
+  updateFloating,
   consumeRender,
   endStroke,
   fit,
@@ -28,7 +51,6 @@ import {
   redo,
   requestRender,
   selectTile,
-  scrollMode,
   selected,
   settings,
   simRequests,
@@ -46,11 +68,13 @@ import {
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const overlayCanvas = overlayRef.current;
+    if (!canvas || !overlayCanvas) return;
 
     const result = createGlContext(canvas);
     if (!result.ok) {
@@ -59,6 +83,8 @@ export function App() {
     }
     const { gl } = result;
     const renderer = new TileRenderer(gl);
+    const overlay = new SelectionOverlay(overlayCanvas);
+    const overlayState = { view, dpr: 1, shape: layout.shape, selection: selection.peek(), gesture, floating };
     const solver = new GlSolver(gl, layout.shape, settings.peek().simQuality);
     const initial = settings.peek();
     solver.setParams({ ambientC: initial.ambientC, gravity: initial.gravity, swirl: initial.swirl });
@@ -113,7 +139,8 @@ export function App() {
       activeType: () => activeType.value,
       setActiveType: (t: TileType) => {
         activeType.value = t;
-        tool.value = "brush";
+        // Select keeps its tool; only the pointer switches to the brush.
+        if (tool.peek() === "pointer") tool.value = "brush";
       },
       tool: () => tool.peek(),
       setTool: (t) => (tool.value = t),
@@ -123,14 +150,33 @@ export function App() {
       redo,
       paint: paintTile,
       select: selectTile,
+      gesture,
+      hasSelection,
+      inSelection,
+      commitMarquee,
+      beginMove,
+      moveBy,
+      endMove,
+      isPasting,
+      placePaste,
+      cancelPaste,
+      clearSelection: () => setSelection(new Set()),
+      copy: () => void copySelection(),
+      cut: cutSelection,
+      paste: startPaste,
+      transform,
+      rotate: rotateAction,
+      hasObjectTarget,
+      adjust: adjustTargets,
+      toggleObject: toggleTargets,
       hover: (x, y) => {
         if (hover[0] === x && hover[1] === y) return;
         hover[0] = x;
         hover[1] = y;
         hoverTile.value = x < 0 ? null : tileIndex(layout.shape, x, y);
+        updateFloating();
         requestRender();
       },
-      scrollZooms: () => scrollMode.peek() === "zoom",
       fit,
       requestRender,
       togglePlay,
@@ -141,8 +187,10 @@ export function App() {
     const stopEffect = effect(() => {
       settings.value;
       selected.value;
+      selection.value;
       playing.value;
-      canvas.style.cursor = tool.value === "brush" ? "crosshair" : "default";
+      const t = tool.value;
+      canvas.style.cursor = t === "pointer" ? "default" : "crosshair";
       requestRender();
     });
 
@@ -292,6 +340,10 @@ export function App() {
       if (cfg.overlays.streamlines) streamlines.draw(opts);
       if (cfg.overlays.particles) particles.draw(opts);
       renderer.draw(opts, LAYER_GLYPHS);
+      overlayState.dpr = opts.dpr;
+      overlayState.shape = layout.shape;
+      overlayState.selection = selection.peek();
+      overlay.draw(overlayState);
     };
     raf = requestAnimationFrame(frame);
 
@@ -332,7 +384,9 @@ export function App() {
         <div class="stage">
           <div class="viewport">
             <canvas ref={canvasRef} />
+            <canvas ref={overlayRef} class="overlay" />
             <Inspector />
+            <LegendRow />
           </div>
           <SimBar />
         </div>

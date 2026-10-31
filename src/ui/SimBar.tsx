@@ -67,10 +67,21 @@ function Legend({ lo, hi, ambient, auto }: { lo: number; hi: number; ambient: nu
   );
 }
 
+/** Heat scale, floating over the bottom-right of the canvas. */
+export function LegendRow() {
+  const s = settings.value;
+  const r = heatRange.value;
+  if (!s.overlays.heatMap) return null;
+  return (
+    <div class="legend-float">
+      <Legend lo={r.lo} hi={r.hi} ambient={s.ambientC} auto={s.heatScale.auto} />
+    </div>
+  );
+}
+
 /** Playback controls, heat map toggles and legend, under the canvas. */
 export function SimBar() {
   const s = settings.value;
-  const r = heatRange.value;
   const isPlaying = playing.value;
   return (
     <div class="simbar">
@@ -169,9 +180,6 @@ export function SimBar() {
         />
         <output>{s.swirl.toFixed(2)}</output>
       </label>
-      {s.overlays.heatMap && (
-        <Legend lo={r.lo} hi={r.hi} ambient={s.ambientC} auto={s.heatScale.auto} />
-      )}
     </div>
   );
 }

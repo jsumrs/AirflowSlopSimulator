@@ -20,11 +20,21 @@ import { Layout, sameTile, type TileSnapshot } from "../model/layout";
 import { Scene } from "../model/scene";
 import { DEFAULT_SETTINGS, type Settings, cloneSettings, sanitizeSettings } from "../model/settings";
 import {
+  type Direction,
   type FanSettings,
   type HeaterSettings,
   TileType,
   type WindowSettings,
 } from "../model/tiles";
+import {
+  type Stamp,
+  captureStamp,
+  forEachStampTile,
+  rectIndices,
+  rotateStamp,
+} from "../input/stamp";
+import type { Tool } from "../input/canvasInput";
+import type { Gesture } from "../render/selectionOverlay";
 import { createView, fitView } from "../render/view";
 
 // --- Document state ---
@@ -53,14 +63,22 @@ export const view = createView();
 /** Canvas size in CSS px, kept current by App. */
 export const viewport = { w: 0, h: 0 };
 
-export const tool = signal<"pointer" | "brush">("pointer");
-/** What plain scroll does: pan (trackpad) or zoom (mouse wheel). */
-export const scrollMode = signal<"pan" | "zoom">("pan");
+export const tool = signal<Tool>("pointer");
 export const activeType = signal(TileType.Wall);
 export const settings = signal<Settings>(scene.settings);
 export const gridShape = signal(layout.shape);
 /** Selected tile index, or null. */
 export const selected = signal<number | null>(null);
+/** Tiles picked with the Select tool. Replaced, never mutated. A single tile also sets `selected`. */
+export const selection = signal<ReadonlySet<number>>(new Set());
+/** Marquee / rectangle drag in progress. Plain object: written by input, read by the overlay. */
+export const gesture: Gesture = { kind: "none", x0: 0, y0: 0, x1: 0, y1: 0, mode: "replace" };
+/** A stamp following the cursor (paste) or the drag (move). Plain object, read by the overlay. */
+export const floating: { stamp: Stamp | null; ox: number; oy: number; kind: "paste" | "move"; baseX: number; baseY: number } = {
+  stamp: null, ox: 0, oy: 0, kind: "paste", baseX: 0, baseY: 0,
+};
+let clipboard: Stamp | null = null;
+export const hasClipboard = signal(false);
 /** Bumped on every layout change so the panel re-reads tile settings. */
 export const layoutRev = signal(0);
 /** Bumped whenever the undo/redo stacks change. */
@@ -143,9 +161,12 @@ function changed(): void {
   settings.value = scene.settings;
   if (!sameShape(gridShape.value, layout.shape)) {
     gridShape.value = layout.shape;
+    clearSelection();
+    cancelPaste();
     fit();
   }
   if (selected.value !== null && selected.value >= layout.types.length) selected.value = null;
+  pruneSelection();
   requestRender();
   autosave.schedule();
 }
@@ -205,27 +226,302 @@ export function selectTile(x: number, y: number): void {
   selected.value = tileIndex(layout.shape, x, y);
 }
 
-/** Edit one tile's settings. Rapid edits to the same fields merge into one undo step. */
-function editTile(i: number, fields: string[], mutate: () => boolean): void {
+// --- Selection and bulk edits ---
+
+const EMPTY: ReadonlySet<number> = new Set();
+
+export function setSelection(next: ReadonlySet<number>): void {
+  selection.value = next.size === 0 ? EMPTY : next;
+  selected.value = next.size === 1 ? next.values().next().value! : null;
+  requestRender();
+}
+
+export function clearSelection(): void {
+  if (selection.peek().size > 0) selection.value = EMPTY;
+}
+
+/** Drop selected tiles that no longer exist (after undo, resize, import). */
+function pruneSelection(): void {
+  const sel = selection.peek();
+  for (const i of sel) {
+    if (i >= layout.types.length) {
+      setSelection(new Set([...sel].filter((j) => j < layout.types.length)));
+      return;
+    }
+  }
+}
+
+/** Something is selected: a Select-tool selection or a single clicked tile. */
+export function hasSelection(): boolean {
+  return selection.peek().size > 0 || selected.peek() !== null;
+}
+export function inSelection(x: number, y: number): boolean {
+  return inBounds(layout.shape, x, y) && selection.peek().has(tileIndex(layout.shape, x, y));
+}
+
+/** Combine a marquee rectangle with the current selection. */
+export function commitMarquee(
+  x0: number, y0: number, x1: number, y1: number, mode: Gesture["mode"],
+): void {
+  const hit = rectIndices(layout.shape, x0, y0, x1, y1);
+  const next = new Set(mode === "replace" ? [] : selection.peek());
+  for (const i of hit) {
+    if (mode === "subtract") next.delete(i);
+    else next.add(i);
+  }
+  setSelection(next);
+}
+
+/** Set many tiles exactly as one undo step. */
+function commitTiles(snaps: Map<number, TileSnapshot>): void {
   endStroke();
-  const before = layout.tileSnapshot(i);
-  if (!mutate()) return;
-  const after = layout.tileSnapshot(i);
-  if (sameTile(before, after)) return;
+  const changes = new Map<number, TileChange>();
+  for (const [i, after] of snaps) {
+    const before = layout.tileSnapshot(i);
+    if (!sameTile(before, after)) changes.set(i, { before, after });
+  }
+  if (changes.size === 0) return;
+  const cmd = new TileEditCommand(scene, changes);
+  cmd.apply();
+  history.record(cmd);
+  changed();
+}
+
+const AIR: TileSnapshot = { type: TileType.Air };
+
+function deleteSelection(): void {
+  const snaps = new Map<number, TileSnapshot>();
+  for (const i of selection.peek()) snaps.set(i, AIR);
+  commitTiles(snaps);
+}
+
+export function copySelection(): boolean {
+  const cap = captureStamp(layout, selection.peek());
+  if (!cap) return false;
+  clipboard = cap.stamp;
+  hasClipboard.value = true;
+  return true;
+}
+
+export function cutSelection(): void {
+  if (copySelection()) deleteSelection();
+}
+
+/** Move the selection's tiles to a stamp at (ox, oy): clear sources, place, reselect. */
+function relocate(stamp: Stamp, ox: number, oy: number): void {
+  const snaps = new Map<number, TileSnapshot>();
+  for (const i of selection.peek()) snaps.set(i, AIR);
+  const dest = new Set<number>();
+  forEachStampTile(layout.shape, stamp, ox, oy, (i, t) => {
+    snaps.set(i, t);
+    dest.add(i);
+  });
+  commitTiles(snaps);
+  setSelection(dest);
+}
+
+/** Rotate 90 degrees. Works on the floating paste if there is one, else on the selection. */
+export function transform(op: "cw" | "ccw"): void {
+  const apply = (s: Stamp) => rotateStamp(s, op === "cw");
+  if (floating.stamp && floating.kind === "paste") {
+    floating.stamp = apply(floating.stamp);
+    clipboard = floating.stamp;
+    updateFloating();
+    requestRender();
+    return;
+  }
+  const cap = captureStamp(layout, selection.peek());
+  if (!cap) return;
+  const next = apply(cap.stamp);
+  const [gw, gh] = layout.shape as [number, number];
+  if (next.w > gw || next.h > gh) {
+    notice.value = "That selection doesn't fit the grid once rotated.";
+    return;
+  }
+  const ox = cap.x + Math.floor((cap.stamp.w - next.w) / 2);
+  const oy = cap.y + Math.floor((cap.stamp.h - next.h) / 2);
+  relocate(next, Math.min(gw - next.w, Math.max(0, ox)), Math.min(gh - next.h, Math.max(0, oy)));
+}
+
+// Move (drag inside the selection)
+
+export function beginMove(): boolean {
+  const cap = captureStamp(layout, selection.peek());
+  if (!cap) return false;
+  floating.stamp = cap.stamp;
+  floating.kind = "move";
+  floating.baseX = floating.ox = cap.x;
+  floating.baseY = floating.oy = cap.y;
+  return true;
+}
+
+/** Offset in tiles from where the drag started. Keeps the whole stamp inside the grid. */
+export function moveBy(dx: number, dy: number): void {
+  const s = floating.stamp;
+  if (!s || floating.kind !== "move") return;
+  floating.ox = Math.min(layout.shape[0]! - s.w, Math.max(0, floating.baseX + dx));
+  floating.oy = Math.min(layout.shape[1]! - s.h, Math.max(0, floating.baseY + dy));
+  requestRender();
+}
+
+export function endMove(commit: boolean): void {
+  const s = floating.stamp;
+  if (s && floating.kind === "move" && commit && (floating.ox !== floating.baseX || floating.oy !== floating.baseY)) {
+    relocate(s, floating.ox, floating.oy);
+  }
+  floating.stamp = null;
+  requestRender();
+}
+
+// Paste
+
+export function isPasting(): boolean {
+  return floating.stamp !== null && floating.kind === "paste";
+}
+
+/** Centre the floating paste on the cursor, kept inside the grid. */
+export function updateFloating(): void {
+  const s = floating.stamp;
+  if (!s || floating.kind !== "paste") return;
+  const hx = hover[0] < 0 ? 0 : hover[0];
+  const hy = hover[1] < 0 ? 0 : hover[1];
+  floating.ox = Math.max(0, Math.min(layout.shape[0]! - s.w, hx - Math.floor(s.w / 2)));
+  floating.oy = Math.max(0, Math.min(layout.shape[1]! - s.h, hy - Math.floor(s.h / 2)));
+}
+
+export function startPaste(): void {
+  if (!clipboard) return;
+  endMove(false);
+  floating.stamp = clipboard;
+  floating.kind = "paste";
+  tool.value = "select";
+  updateFloating();
+  requestRender();
+}
+
+export function cancelPaste(): void {
+  if (!isPasting()) return;
+  floating.stamp = null;
+  requestRender();
+}
+
+export function placePaste(): void {
+  const s = floating.stamp;
+  if (!s || floating.kind !== "paste") return;
+  updateFloating();
+  const snaps = new Map<number, TileSnapshot>();
+  const placed = new Set<number>();
+  forEachStampTile(layout.shape, s, floating.ox, floating.oy, (i, t) => {
+    snaps.set(i, t);
+    placed.add(i);
+  });
+  floating.stamp = null;
+  commitTiles(snaps);
+  setSelection(placed);
+}
+
+// Shortcuts that act on a target
+
+/** Selection if it has several tiles, else the hovered tile, else the selected tile. */
+function targets(): number[] {
+  const sel = selection.peek();
+  if (sel.size > 1) return [...sel];
+  const h = hoverTile.peek();
+  if (h !== null && layout.typeAt(h) !== TileType.Air && layout.typeAt(h) !== TileType.Wall) return [h];
+  const s = selected.peek();
+  return s === null ? [] : [s];
+}
+
+function ofType(idx: number[], type: TileType): number[] {
+  return idx.filter((i) => layout.typeAt(i) === type);
+}
+
+/** True if there is a fan, heater or window for a shortcut to act on. */
+export function hasObjectTarget(): boolean {
+  return targets().some((i) => {
+    const t = layout.typeAt(i);
+    return t === TileType.Fan || t === TileType.Heater || t === TileType.Window;
+  });
+}
+
+/** Rotate target fans by one 45 degree step (1 = clockwise). */
+export function turnFans(step: 1 | -1): void {
+  const fans = ofType(targets(), TileType.Fan);
+  editTiles(fans, ["dir"], (i) =>
+    layout.updateFan(i, { dir: ((layout.fans.get(i)!.dir + step + 8) % 8) as Direction }),
+  );
+}
+
+/** `[` / `]`: fan level or heater target. `secondary` (Shift): sweep speed or heater output rate. */
+export function adjustTargets(secondary: boolean, step: 1 | -1): void {
+  const t = targets();
+  const fans = ofType(t, TileType.Fan);
+  const heaters = ofType(t, TileType.Heater);
+  const field = secondary ? "secondary" : "primary";
+  editTiles(fans, [field], (i) => {
+    const f = layout.fans.get(i)!;
+    return layout.updateFan(i, secondary ? { sweepSpeed: f.sweepSpeed + step } : { level: f.level + step });
+  });
+  editTiles(heaters, [field], (i) => {
+    const h = layout.heaters.get(i)!;
+    return layout.updateHeater(i, secondary ? { outputRate: h.outputRate + step } : { targetC: h.targetC + 5 * step });
+  });
+}
+
+/** O: toggle fan oscillation, heater power, window open. Mixed values turn everything on. */
+export function toggleTargets(): void {
+  const t = targets();
+  const fans = ofType(t, TileType.Fan);
+  const wins = ofType(t, TileType.Window);
+  const heaters = ofType(t, TileType.Heater);
+  const osc = !fans.every((i) => layout.fans.get(i)!.oscillate);
+  const open = !wins.every((i) => layout.windows.get(i)!.open);
+  updateFans(fans, { oscillate: osc });
+  updateWindows(wins, { open });
+  updateHeaters(heaters, { on: !heaters.every((i) => layout.heaters.get(i)!.on) });
+}
+
+/** E/Q: rotate the selected tiles 90 degrees (Select tool) or a floating paste; else turn the target fan 45 degrees. */
+export function rotateAction(clockwise: boolean): void {
+  if (isPasting() || (tool.peek() === "select" && selection.peek().size > 0)) transform(clockwise ? "cw" : "ccw");
+  else turnFans(clockwise ? 1 : -1);
+}
+
+/** Edit the settings of several tiles as one undo step. Rapid edits to the same fields merge. */
+function editTiles(indices: readonly number[], fields: string[], mutate: (i: number) => boolean): void {
+  if (indices.length === 0) return;
+  endStroke();
+  const changes = new Map<number, TileChange>();
+  for (const i of indices) {
+    const before = layout.tileSnapshot(i);
+    if (!mutate(i)) continue;
+    const after = layout.tileSnapshot(i);
+    if (!sameTile(before, after)) changes.set(i, { before, after });
+  }
+  if (changes.size === 0) return;
   history.record(
-    new TileEditCommand(scene, new Map([[i, { before, after }]]), `tile:${i}:${fields.join(",")}`),
+    new TileEditCommand(scene, changes, `tiles:${indices[0]}:${indices.length}:${fields.join(",")}`),
   );
   changed();
 }
 
 export function updateFan(i: number, patch: Partial<FanSettings>): void {
-  editTile(i, Object.keys(patch), () => layout.updateFan(i, patch));
+  updateFans([i], patch);
 }
 export function updateHeater(i: number, patch: Partial<HeaterSettings>): void {
-  editTile(i, Object.keys(patch), () => layout.updateHeater(i, patch));
+  updateHeaters([i], patch);
 }
 export function updateWindow(i: number, patch: Partial<WindowSettings>): void {
-  editTile(i, Object.keys(patch), () => layout.updateWindow(i, patch));
+  updateWindows([i], patch);
+}
+export function updateFans(indices: readonly number[], patch: Partial<FanSettings>): void {
+  editTiles(indices, Object.keys(patch), (i) => layout.updateFan(i, patch));
+}
+export function updateHeaters(indices: readonly number[], patch: Partial<HeaterSettings>): void {
+  editTiles(indices, Object.keys(patch), (i) => layout.updateHeater(i, patch));
+}
+export function updateWindows(indices: readonly number[], patch: Partial<WindowSettings>): void {
+  editTiles(indices, Object.keys(patch), (i) => layout.updateWindow(i, patch));
 }
 
 /** Change global settings. `key` names what changed so slider drags merge. */
@@ -270,6 +566,7 @@ function replaceScene(next: ReturnType<Scene["snapshot"]>): void {
   const cmd = new ReplaceSceneCommand(scene, scene.snapshot(), next);
   history.execute(cmd);
   selected.value = null;
+  clearSelection();
   changed();
 }
 
@@ -293,6 +590,7 @@ export function resizeGrid(w: number, h: number): void {
   const after = scene.snapshot();
   history.record(new ReplaceSceneCommand(scene, before, after));
   selected.value = null;
+  clearSelection();
   changed();
 }
 

@@ -61,7 +61,7 @@ Every milestone also needs `bunx tsc --noEmit` and `bunx vitest run` to pass.
 
 **Done when:** all four overlays toggle independently, and changing quality or speed doesn't reset the layout.
 
-## [ ] 6. Editing tools
+## [x] 6. Editing tools
 - Rectangle tool: outline by default, filled with Shift (section 7.1).
 - Select tool: add/subtract selection, move, copy/cut/paste, delete, fill, rotate, flip. Fan directions rotate and mirror with the tiles (section 7.2).
 - Bulk edit of selected fans and heaters in the side panel, with "—" for mixed values.
