@@ -62,3 +62,4 @@ The save format is versioned JSON (`version` field, SPEC.md section 10). It stor
 **Before calling a task done**
 - Run `bunx tsc --noEmit` and `bunx vitest run`.
 - For solver or render changes, say which example layouts the change should be checked against. Tests can't confirm that GPU output looks right.
+- For any visual change (UI, tile glyphs, shaders), do not run a headless browser or take screenshots. The user reviews visuals themselves. Check with `tsc`, `vitest` and `bun run build`, read shader code carefully, and say what to look at and that the result is untested by eye.
