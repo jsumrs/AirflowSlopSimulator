@@ -20,6 +20,7 @@ Bun is the package manager only. Vite builds and serves; Vitest runs tests. Conf
 bun install
 bun run dev          # Vite dev server
 bun run build        # static output, deployable to any static host
+bun run deploy       # build and force-push dist/ to gh-pages (GitHub Pages serves that branch)
 bunx tsc --noEmit    # type check (Vite does not type check)
 bunx vitest          # all tests
 bunx vitest run path/to/file.test.ts -t "test name"   # single test
